@@ -3,7 +3,7 @@ project(mecamind_description)
 
 find_package(ament_cmake REQUIRED)
 
-install(DIRECTORY urdf rviz
+install(DIRECTORY urdf
   DESTINATION share/${PROJECT_NAME}
 )
 
