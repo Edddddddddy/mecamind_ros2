@@ -1,0 +1,23 @@
+mecamind_sim_mapping:
+  ros__parameters:
+    mode: sim
+    mission: mapping
+    output_topic: /mecamind/mission_brief
+    use_sim_time: true
+    scan_topic: /scan_raw
+    imu_topic: /imu/data_raw
+    odom_topic: /odom
+    cmd_vel_topic: /controller/cmd_vel
+    world_name: three_room_house.world
+
+mecamind_real_navigation:
+  ros__parameters:
+    mode: real
+    mission: navigation
+    output_topic: /mecamind/mission_brief
+    use_sim_time: false
+    scan_topic: /scan_raw
+    imu_topic: /imu/data_raw
+    odom_topic: /odom
+    cmd_vel_topic: /controller/cmd_vel
+    world_name: real_robot

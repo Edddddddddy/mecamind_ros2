@@ -1,0 +1,19 @@
+checks:
+  - name: ros_domain_id
+    command: echo $ROS_DOMAIN_ID
+    required: true
+  - name: scan_topic
+    command: ros2 topic hz /scan_raw
+    required: true
+  - name: imu_topic
+    command: ros2 topic echo --once /imu/data_raw
+    required: true
+  - name: odom_topic
+    command: ros2 topic echo --once /odom
+    required: true
+  - name: tf_tree
+    command: ros2 run tf2_tools view_frames
+    required: true
+  - name: cmd_vel
+    command: ros2 topic info /controller/cmd_vel
+    required: true

@@ -1,0 +1,69 @@
+<?xml version="1.0" ?>
+<sdf version="1.6">
+  <world name="three_room_house">
+    <include>
+      <uri>model://sun</uri>
+    </include>
+    <include>
+      <uri>model://ground_plane</uri>
+    </include>
+
+    <model name="house_shell">
+      <static>true</static>
+
+      <link name="north_wall">
+        <pose>0 2.95 0.4 0 0 0</pose>
+        <collision name="collision"><geometry><box><size>7.8 0.12 0.8</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>7.8 0.12 0.8</size></box></geometry></visual>
+      </link>
+
+      <link name="south_wall">
+        <pose>0 -2.95 0.4 0 0 0</pose>
+        <collision name="collision"><geometry><box><size>7.8 0.12 0.8</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>7.8 0.12 0.8</size></box></geometry></visual>
+      </link>
+
+      <link name="west_wall">
+        <pose>-3.9 0 0.4 0 0 0</pose>
+        <collision name="collision"><geometry><box><size>0.12 5.9 0.8</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.12 5.9 0.8</size></box></geometry></visual>
+      </link>
+
+      <link name="east_wall">
+        <pose>3.9 0 0.4 0 0 0</pose>
+        <collision name="collision"><geometry><box><size>0.12 5.9 0.8</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.12 5.9 0.8</size></box></geometry></visual>
+      </link>
+
+      <link name="hall_divider_left">
+        <pose>-1.2 1.0 0.4 0 0 0</pose>
+        <collision name="collision"><geometry><box><size>0.12 3.2 0.8</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.12 3.2 0.8</size></box></geometry></visual>
+      </link>
+
+      <link name="hall_divider_right">
+        <pose>1.4 -0.4 0.4 0 0 0</pose>
+        <collision name="collision"><geometry><box><size>0.12 3.2 0.8</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.12 3.2 0.8</size></box></geometry></visual>
+      </link>
+
+      <link name="table">
+        <pose>-2.6 1.5 0.18 0 0 0</pose>
+        <collision name="collision"><geometry><box><size>0.8 0.8 0.36</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.8 0.8 0.36</size></box></geometry></visual>
+      </link>
+
+      <link name="cabinet">
+        <pose>2.7 -1.8 0.25 0 0 0</pose>
+        <collision name="collision"><geometry><box><size>0.6 1.0 0.5</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.6 1.0 0.5</size></box></geometry></visual>
+      </link>
+
+      <link name="pillar">
+        <pose>0.5 -2.8 0.4 0 0 0</pose>
+        <collision name="collision"><geometry><box><size>0.4 0.4 0.8</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.4 0.4 0.8</size></box></geometry></visual>
+      </link>
+    </model>
+  </world>
+</sdf>

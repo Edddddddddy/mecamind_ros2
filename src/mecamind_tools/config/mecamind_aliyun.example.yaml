@@ -1,0 +1,3 @@
+# Copy this file to mecamind_aliyun.local.yaml and keep the local file untracked.
+aliyun:
+  api_key: "your_dashscope_api_key"

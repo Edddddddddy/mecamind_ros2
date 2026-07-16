@@ -1,0 +1,28 @@
+waypoints:
+  - name: living_room_entry
+    x: 0.8
+    y: 0.8
+  - name: lower_central_hall
+    x: 0.0
+    y: -1.2
+  - name: entry_hall
+    x: -2.8
+    y: -1.8
+  - name: lower_central_hall_return
+    x: 0.0
+    y: -1.2
+  - name: upper_right_corridor
+    x: 0.8
+    y: 1.4
+  - name: bedroom_clearance
+    x: 0.8
+    y: 1.8
+  - name: bedroom_approach
+    x: 2.0
+    y: 1.8
+  - name: bedroom_right_entry
+    x: 3.4
+    y: 1.8
+  - name: bedroom_center
+    x: 3.4
+    y: -2.2
