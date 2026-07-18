@@ -10,14 +10,59 @@ from typing import List, Optional
 
 import rclpy
 from geometry_msgs.msg import Twist
-from nav_msgs.msg import Odometry
+from nav_msgs.msg import OccupancyGrid, Odometry
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import LaserScan
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
+import yaml
 
 from .nav_utils import load_yaml
+
+
+def write_occupancy_grid_pair(save_base: Path, msg: OccupancyGrid) -> None:
+    """Write nav2-compatible PGM/YAML from an OccupancyGrid (map_saver Y-flip)."""
+    width = int(msg.info.width)
+    height = int(msg.info.height)
+    if width <= 0 or height <= 0 or len(msg.data) < width * height:
+        raise ValueError("OccupancyGrid is empty or incomplete")
+
+    pixels = bytearray(width * height)
+    for row in range(height):
+        src_row = height - 1 - row  # map_saver: image row 0 = world y_max
+        for col in range(width):
+            value = int(msg.data[src_row * width + col])
+            if value < 0:
+                pixel = 205
+            elif value >= 65:
+                pixel = 0
+            elif value <= 25:
+                pixel = 254
+            else:
+                # Keep mid values visually between free/occupied.
+                pixel = int(round(255 - value * 255 / 100.0))
+            pixels[row * width + col] = pixel
+
+    pgm_path = save_base.with_suffix(".pgm")
+    yaml_path = save_base.with_suffix(".yaml")
+    pgm_path.write_bytes(
+        f"P5\n{width} {height}\n255\n".encode("ascii") + bytes(pixels)
+    )
+    meta = {
+        "image": pgm_path.name,
+        "mode": "trinary",
+        "resolution": float(msg.info.resolution),
+        "origin": [
+            float(msg.info.origin.position.x),
+            float(msg.info.origin.position.y),
+            0.0,
+        ],
+        "negate": 0,
+        "occupied_thresh": 0.65,
+        "free_thresh": 0.25,
+    }
+    yaml_path.write_text(yaml.dump(meta, default_flow_style=False, sort_keys=False), encoding="utf-8")
 
 
 def _default_route_file() -> str:
@@ -92,7 +137,8 @@ class MecaMindMappingRouteDriver(Node):
         self.declare_parameter("max_linear_y", 0.22)
         self.declare_parameter("max_angular_z", 1.0)
         self.declare_parameter("obstacle_stop_dist", 0.28)
-        self.declare_parameter("cmd_topic", "/controller/cmd_vel")
+        self.declare_parameter("cmd_topic", "/cmd_vel")
+        self.declare_parameter("scan_topic", "/scan")
         self.declare_parameter("auto_save_map", True)
         self.declare_parameter("checkpoint_save_interval_sec", 90.0)
         self.declare_parameter("checkpoint_keep_snapshots", False)
@@ -103,10 +149,7 @@ class MecaMindMappingRouteDriver(Node):
         self.declare_parameter("manual_save_path", "")
         self.declare_parameter("route_report_path", "")
         self.declare_parameter("status_topic", "/mecamind/mapping_status")
-        self.declare_parameter(
-            "map_save_path",
-            str(Path("~/.ros/mecamind_three_room_map").expanduser()),
-        )
+        self.declare_parameter("map_save_path", "maps/mecamind_three_room_map")
 
         self.route_file = str(self.get_parameter("route_file").value)
         config = load_yaml(self.route_file)
@@ -155,7 +198,8 @@ class MecaMindMappingRouteDriver(Node):
         self.scan_angle_min = -math.pi
         self.scan_angle_increment = 0.0
 
-        self._boot_time = time.time()
+        # 使用仿真时钟做路线超时；Gazebo RTF < 1 时墙钟会误判 no_progress。
+        self._boot_time = -1.0
         self._running = False
         self._route_idx = 0
         self._hold_until = 0.0
@@ -165,15 +209,24 @@ class MecaMindMappingRouteDriver(Node):
         self._phase = "waiting_for_sensors"
         self._waypoint_results: List[dict] = []
         self._last_status_publish = 0.0
-        self._last_checkpoint_save = self._boot_time
+        self._last_checkpoint_save = -1.0
         self._checkpoint_index = 0
         self._active_route_idx = -1
-        self._waypoint_started_at = self._boot_time
-        self._last_waypoint_progress = self._boot_time
+        self._waypoint_started_at = -1.0
+        self._last_waypoint_progress = -1.0
         self._best_waypoint_dist = float("inf")
 
         self.odom_sub = self.create_subscription(Odometry, "/odom", self._odom_cb, 10)
-        self.scan_sub = self.create_subscription(LaserScan, "/scan_raw", self._scan_cb, 10)
+        self.scan_sub = self.create_subscription(
+            LaserScan, str(self.get_parameter("scan_topic").value), self._scan_cb, 10
+        )
+        map_qos = QoSProfile(depth=1)
+        map_qos.reliability = ReliabilityPolicy.RELIABLE
+        map_qos.durability = DurabilityPolicy.TRANSIENT_LOCAL
+        self._latest_map: Optional[OccupancyGrid] = None
+        self.map_sub = self.create_subscription(
+            OccupancyGrid, "/map", self._map_cb, map_qos
+        )
         self.cmd_pub = self.create_publisher(Twist, str(self.get_parameter("cmd_topic").value), 10)
         status_qos = QoSProfile(depth=1)
         status_qos.reliability = ReliabilityPolicy.RELIABLE
@@ -203,6 +256,9 @@ class MecaMindMappingRouteDriver(Node):
         self.scan_angle_min = float(msg.angle_min)
         self.scan_angle_increment = float(msg.angle_increment)
 
+    def _map_cb(self, msg: OccupancyGrid) -> None:
+        self._latest_map = msg
+
     def _front_distance(self) -> float:
         if not self.laser_ranges:
             return float("inf")
@@ -219,6 +275,9 @@ class MecaMindMappingRouteDriver(Node):
         clean = values
         return min(clean) if clean else float("inf")
 
+    def _now_sec(self) -> float:
+        return self.get_clock().now().nanoseconds * 1e-9
+
     def _start_if_ready(self, now: float) -> None:
         if self._running:
             return
@@ -226,6 +285,13 @@ class MecaMindMappingRouteDriver(Node):
             return
         if self.laser_ranges is None:
             return
+        if self._boot_time < 0.0:
+            if now <= 0.0:
+                return
+            self._boot_time = now
+            self._last_checkpoint_save = now
+            self._waypoint_started_at = now
+            self._last_waypoint_progress = now
         if now - self._boot_time < self.startup_delay_sec:
             return
         self._running = True
@@ -237,7 +303,7 @@ class MecaMindMappingRouteDriver(Node):
         if self._route_finished:
             self._publish_status()
             return
-        now = time.time()
+        now = self._now_sec()
         self._publish_status()
         self._start_if_ready(now)
         if not self._running:
@@ -388,33 +454,51 @@ class MecaMindMappingRouteDriver(Node):
         if save_base is None:
             save_base = self.auto_map_path
         save_base.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            completed = subprocess.run(
-                [
-                    "ros2",
-                    "run",
-                    "nav2_map_server",
-                    "map_saver_cli",
-                    "-f",
-                    str(save_base),
-                    "--ros-args",
-                    "-p",
-                    "map_subscribe_transient_local:=true",
-                ],
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=30,
+
+        # 优先直接写缓存的 /map（不依赖 map_saver_cli 订阅时机）。
+        if self._latest_map is not None:
+            try:
+                write_occupancy_grid_pair(save_base, self._latest_map)
+                self.get_logger().info(f"Map saved to {save_base}.pgm/.yaml")
+                return True
+            except Exception as exc:  # noqa: BLE001
+                self.get_logger().error(f"Direct map write failed: {exc}")
+
+        for attempt in range(1, 4):
+            try:
+                completed = subprocess.run(
+                    [
+                        "ros2",
+                        "run",
+                        "nav2_map_server",
+                        "map_saver_cli",
+                        "-f",
+                        str(save_base),
+                        "--ros-args",
+                        "-p",
+                        "map_subscribe_transient_local:=true",
+                        "-p",
+                        "use_sim_time:=true",
+                    ],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=45,
+                )
+            except Exception as exc:  # noqa: BLE001
+                self.get_logger().error(f"Map save failed to start (try {attempt}): {exc}")
+                continue
+
+            if completed.returncode == 0:
+                self.get_logger().info(f"Map saved to {save_base}.pgm/.yaml")
+                return True
+            self.get_logger().warn(
+                f"map_saver_cli try {attempt} failed: "
+                f"{completed.stderr.strip() or completed.stdout.strip()}"
             )
-        except Exception as exc:  # noqa: BLE001
-            self.get_logger().error(f"Map save failed to start: {exc}")
-            return False
+            time.sleep(1.0)
 
-        if completed.returncode == 0:
-            self.get_logger().info(f"Map saved to {save_base}.pgm/.yaml")
-            return True
-
-        self.get_logger().error(completed.stderr.strip() or completed.stdout.strip())
+        self.get_logger().error(f"Map save failed for {save_base}")
         return False
 
     def _robot_pose(self) -> dict:

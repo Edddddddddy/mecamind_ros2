@@ -16,7 +16,7 @@ def generate_launch_description():
 
     return LaunchDescription(
         [
-            DeclareLaunchArgument("lidar_noise_std", default_value="0.0"),
+            DeclareLaunchArgument("lidar_noise_std", default_value="0.01"),
             DeclareLaunchArgument("lidar_dropout_prob", default_value="0.0"),
             DeclareLaunchArgument("odom_xy_noise_std", default_value="0.0"),
             DeclareLaunchArgument("odom_yaw_noise_std", default_value="0.0"),

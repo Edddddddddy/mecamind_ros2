@@ -1,0 +1,975 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>10.3.2_SLAM建图与地图管理.md</title>
+<meta http-equiv="Content-type" content="text/html;charset=UTF-8">
+
+<style>
+/* https://github.com/microsoft/vscode/blob/master/extensions/markdown-language-features/media/markdown.css */
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+body {
+	font-family: var(--vscode-markdown-font-family, -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif);
+	font-size: var(--vscode-markdown-font-size, 14px);
+	padding: 0 26px;
+	line-height: var(--vscode-markdown-line-height, 22px);
+	word-wrap: break-word;
+}
+
+#code-csp-warning {
+	position: fixed;
+	top: 0;
+	right: 0;
+	color: white;
+	margin: 16px;
+	text-align: center;
+	font-size: 12px;
+	font-family: sans-serif;
+	background-color:#444444;
+	cursor: pointer;
+	padding: 6px;
+	box-shadow: 1px 1px 1px rgba(0,0,0,.25);
+}
+
+#code-csp-warning:hover {
+	text-decoration: none;
+	background-color:#007acc;
+	box-shadow: 2px 2px 2px rgba(0,0,0,.25);
+}
+
+body.scrollBeyondLastLine {
+	margin-bottom: calc(100vh - 22px);
+}
+
+body.showEditorSelection .code-line {
+	position: relative;
+}
+
+body.showEditorSelection .code-active-line:before,
+body.showEditorSelection .code-line:hover:before {
+	content: "";
+	display: block;
+	position: absolute;
+	top: 0;
+	left: -12px;
+	height: 100%;
+}
+
+body.showEditorSelection li.code-active-line:before,
+body.showEditorSelection li.code-line:hover:before {
+	left: -30px;
+}
+
+.vscode-light.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(0, 0, 0, 0.15);
+}
+
+.vscode-light.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(0, 0, 0, 0.40);
+}
+
+.vscode-light.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+.vscode-dark.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(255, 255, 255, 0.4);
+}
+
+.vscode-dark.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(255, 255, 255, 0.60);
+}
+
+.vscode-dark.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+.vscode-high-contrast.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(255, 160, 0, 0.7);
+}
+
+.vscode-high-contrast.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(255, 160, 0, 1);
+}
+
+.vscode-high-contrast.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+img {
+	max-width: 100%;
+	max-height: 100%;
+}
+
+a {
+	text-decoration: none;
+}
+
+a:hover {
+	text-decoration: underline;
+}
+
+a:focus,
+input:focus,
+select:focus,
+textarea:focus {
+	outline: 1px solid -webkit-focus-ring-color;
+	outline-offset: -1px;
+}
+
+hr {
+	border: 0;
+	height: 2px;
+	border-bottom: 2px solid;
+}
+
+h1 {
+	padding-bottom: 0.3em;
+	line-height: 1.2;
+	border-bottom-width: 1px;
+	border-bottom-style: solid;
+}
+
+h1, h2, h3 {
+	font-weight: normal;
+}
+
+table {
+	border-collapse: collapse;
+}
+
+table > thead > tr > th {
+	text-align: left;
+	border-bottom: 1px solid;
+}
+
+table > thead > tr > th,
+table > thead > tr > td,
+table > tbody > tr > th,
+table > tbody > tr > td {
+	padding: 5px 10px;
+}
+
+table > tbody > tr + tr > td {
+	border-top: 1px solid;
+}
+
+blockquote {
+	margin: 0 7px 0 5px;
+	padding: 0 16px 0 10px;
+	border-left-width: 5px;
+	border-left-style: solid;
+}
+
+code {
+	font-family: Menlo, Monaco, Consolas, "Droid Sans Mono", "Courier New", monospace, "Droid Sans Fallback";
+	font-size: 1em;
+	line-height: 1.357em;
+}
+
+body.wordWrap pre {
+	white-space: pre-wrap;
+}
+
+pre:not(.hljs),
+pre.hljs code > div {
+	padding: 16px;
+	border-radius: 3px;
+	overflow: auto;
+}
+
+pre code {
+	color: var(--vscode-editor-foreground);
+	tab-size: 4;
+}
+
+/** Theming */
+
+.vscode-light pre {
+	background-color: rgba(220, 220, 220, 0.4);
+}
+
+.vscode-dark pre {
+	background-color: rgba(10, 10, 10, 0.4);
+}
+
+.vscode-high-contrast pre {
+	background-color: rgb(0, 0, 0);
+}
+
+.vscode-high-contrast h1 {
+	border-color: rgb(0, 0, 0);
+}
+
+.vscode-light table > thead > tr > th {
+	border-color: rgba(0, 0, 0, 0.69);
+}
+
+.vscode-dark table > thead > tr > th {
+	border-color: rgba(255, 255, 255, 0.69);
+}
+
+.vscode-light h1,
+.vscode-light hr,
+.vscode-light table > tbody > tr + tr > td {
+	border-color: rgba(0, 0, 0, 0.18);
+}
+
+.vscode-dark h1,
+.vscode-dark hr,
+.vscode-dark table > tbody > tr + tr > td {
+	border-color: rgba(255, 255, 255, 0.18);
+}
+
+</style>
+
+<style>
+/* Tomorrow Theme */
+/* http://jmblog.github.com/color-themes-for-google-code-highlightjs */
+/* Original theme - https://github.com/chriskempson/tomorrow-theme */
+
+/* Tomorrow Comment */
+.hljs-comment,
+.hljs-quote {
+	color: #8e908c;
+}
+
+/* Tomorrow Red */
+.hljs-variable,
+.hljs-template-variable,
+.hljs-tag,
+.hljs-name,
+.hljs-selector-id,
+.hljs-selector-class,
+.hljs-regexp,
+.hljs-deletion {
+	color: #c82829;
+}
+
+/* Tomorrow Orange */
+.hljs-number,
+.hljs-built_in,
+.hljs-builtin-name,
+.hljs-literal,
+.hljs-type,
+.hljs-params,
+.hljs-meta,
+.hljs-link {
+	color: #f5871f;
+}
+
+/* Tomorrow Yellow */
+.hljs-attribute {
+	color: #eab700;
+}
+
+/* Tomorrow Green */
+.hljs-string,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-addition {
+	color: #718c00;
+}
+
+/* Tomorrow Blue */
+.hljs-title,
+.hljs-section {
+	color: #4271ae;
+}
+
+/* Tomorrow Purple */
+.hljs-keyword,
+.hljs-selector-tag {
+	color: #8959a8;
+}
+
+.hljs {
+	display: block;
+	overflow-x: auto;
+	color: #4d4d4c;
+	padding: 0.5em;
+}
+
+.hljs-emphasis {
+	font-style: italic;
+}
+
+.hljs-strong {
+	font-weight: bold;
+}
+</style>
+
+<style>
+/*
+ * Markdown PDF CSS
+ */
+
+ body {
+	font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "Meiryo";
+	padding: 0 12px;
+}
+
+pre {
+	background-color: #f8f8f8;
+	border: 1px solid #cccccc;
+	border-radius: 3px;
+	overflow-x: auto;
+	white-space: pre-wrap;
+	overflow-wrap: break-word;
+}
+
+pre:not(.hljs) {
+	padding: 23px;
+	line-height: 19px;
+}
+
+blockquote {
+	background: rgba(127, 127, 127, 0.1);
+	border-color: rgba(0, 122, 204, 0.5);
+}
+
+.emoji {
+	height: 1.4em;
+}
+
+code {
+	font-size: 14px;
+	line-height: 19px;
+}
+
+/* for inline code */
+:not(pre):not(.hljs) > code {
+	color: #C9AE75; /* Change the old color so it seems less like an error */
+	font-size: inherit;
+}
+
+/* Page Break : use <div class="page"/> or <div class="page"></div> to insert page break
+-------------------------------------------------------- */
+.page {
+	page-break-after: always;
+}
+
+</style>
+
+<script src="https://unpkg.com/mermaid/dist/mermaid.min.js"></script>
+</head>
+<body>
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: document.body.classList.contains('vscode-dark') || document.body.classList.contains('vscode-high-contrast')
+          ? 'dark'
+          : 'default'
+    });
+  </script>
+<h1 id="1032-slam-建图与地图管理">10.3.2 SLAM 建图与地图管理</h1>
+<h2 id="课程信息">课程信息</h2>
+<ul>
+<li>环境：Windows 10、WSL2 Ubuntu 24.04、ROS 2 Jazzy、Gazebo Harmonic。</li>
+<li>本节目标：用 SLAM Toolbox 完成三房间建图，保存 PGM/YAML 地图对，并做地图质量分析。</li>
+<li>主路径：Gazebo + RViz 手动/半自动建图。</li>
+<li>兜底路径：轻量 2D 仿真 + CP2 无界面验收。</li>
+</ul>
+<blockquote>
+<p>路径约定：本讲义假设项目位于 <code>~/mecamind_ros2</code>。若路径不同，请自行替换。建议先 <code>git fetch --tags &amp;&amp; git checkout lesson2.0</code>（第二节课 tag 发布后），或使用老师指定的当前分支。</p>
+</blockquote>
+<p>本节不要求完成 Nav2 导航、YOLO 或语音任务。导航会在下一次课使用本节保存的地图。</p>
+<h2 id="1-本节学习目标">1. 本节学习目标</h2>
+<p>完成本节后，应当能够：</p>
+<ol>
+<li>说清 SLAM 的数据流：激光、里程计、TF、仿真时钟如何汇入建图节点。</li>
+<li>解释 <code>map → odom → base_footprint</code> 坐标系关系，以及 <code>use_sim_time</code> 为何必须开启。</li>
+<li>用统一入口 <code>mapping.launch.py</code> 在 Gazebo 与轻量仿真上建图。</li>
+<li>完成手动遥控建图与半自动路线建图，并保存地图。</li>
+<li>阅读地图质量报告（覆盖率、未知区、自由区连通性、墙体完整性）。</li>
+<li>比较 SLAM Toolbox、Cartographer、RTAB-Map 的适用边界。</li>
+<li>使用 <code>scripts/test_cp2.sh</code> 完成 CP2 验收。</li>
+</ol>
+<h2 id="2-本节重点内容">2. 本节重点内容</h2>
+<h3 id="21-slam-在课程中的位置">2.1 SLAM 在课程中的位置</h3>
+<p>第一节课打通了仿真层接口：<code>/scan</code>、<code>/odom</code>、<code>/cmd_vel</code>、<code>/tf</code>、<code>/clock</code>。<br>
+第二节课在这些接口之上接入 <strong>SLAM Toolbox</strong>，把未知环境扫成一张二维占据栅格地图（OccupancyGrid）。</p>
+<p>地图是后续 Nav2 的输入资产。没有合格地图，定位、规划和巡航都无从谈起。</p>
+<h3 id="22-建图数据流">2.2 建图数据流</h3>
+<pre><code class="language-mermaid"><div class="mermaid">flowchart LR
+    subgraph SIM[仿真后端 Gazebo 或 lite]
+        lidar[LiDAR /scan]
+        odom[Odom /odom]
+        tf1[TF odom→base_footprint]
+        clock[/clock]
+        drive[底盘执行 /cmd_vel]
+    end
+
+    subgraph SLAM[建图层]
+        slam[slam_toolbox]
+        map_tf[TF map→odom]
+        grid[/map OccupancyGrid]
+    end
+
+    subgraph CTRL[控制与安全]
+        teleop[遥控或路线驱动]
+        gate[safety_gate]
+        nav_cmd[/cmd_vel_nav]
+        cmd[/cmd_vel]
+    end
+
+    lidar --> slam
+    tf1 --> slam
+    clock --> slam
+    odom --> teleop
+    slam --> map_tf
+    slam --> grid
+    teleop --> nav_cmd --> gate --> cmd --> drive
+</div></code></pre>
+<p>要点：</p>
+<ul>
+<li><strong>传感器输入</strong>：<code>/scan</code> + 里程计。注意：<code>slam_toolbox</code> 读取里程计用的是 <strong>TF <code>odom → base_footprint</code></strong>，而不是直接订阅 <code>/odom</code> 话题（两者内容一致，都由仿真发布）。</li>
+<li><strong>时间同步</strong>：所有节点 <code>use_sim_time:=true</code>，订阅 <code>/clock</code>，否则会出现 TF 外推失败或空地图。</li>
+<li><strong>SLAM 输出</strong>：<code>/map</code>（栅格地图）以及 <code>map → odom</code> 变换。</li>
+<li><strong>速度链路</strong>：遥控或路线驱动发到 <code>/cmd_vel_nav</code>，经 <code>safety_gate</code> 碰撞检查后输出 <code>/cmd_vel</code>，两个后端都只消费 <code>/cmd_vel</code>。</li>
+</ul>
+<p>下面是建图运行时<strong>实测</strong>的节点/话题连接图（Gazebo 后端，已隐去 rqt、参数事件等无关节点；椭圆是节点，方框是话题）：</p>
+<p><img src="file:///home/lqf/mecamind_ros2/docs/images/10.3.2/rqt_graph_nodes.png" alt="实测节点话题图"></p>
+<p>对照上图从右往左读两条链：</p>
+<ol>
+<li><strong>控制链</strong>：<code>mecamind_mapping_route_driver</code>（半自动时；手动时换成键盘遥控）发 <code>/cmd_vel_nav</code> → <code>mecamind_mapping_safety_gate</code> 检查激光距离后发 <code>/cmd_vel</code> → <code>mecamind_gz_bridge</code> 送进 Gazebo 驱动底盘。</li>
+<li><strong>感知链</strong>：<code>mecamind_gz_bridge</code> 发布 <code>/scan</code>、<code>/odom</code>、<code>/clock</code>、<code>/tf</code>；<code>slam_toolbox</code> 订阅 <code>/scan</code>、<code>/clock</code> 和 <code>/tf</code>，输出 <code>/map</code> 和 <code>map → odom</code>（也走 <code>/tf</code>）；RViz 订阅 <code>/map</code>、<code>/scan</code> 做可视化。</li>
+</ol>
+<p>课堂上可以让学员自己跑 <code>rqt_graph</code>（视图切到 &quot;Nodes/Topics (active)&quot;）对照验证。</p>
+<h3 id="23-tf为什么要有-map-和-odom">2.3 TF：为什么要有 map 和 odom</h3>
+<table>
+<thead>
+<tr>
+<th>坐标系</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>map</code></td>
+<td>全局地图坐标系；SLAM 通过闭环修正漂移后，发布 <code>map → odom</code></td>
+</tr>
+<tr>
+<td><code>odom</code></td>
+<td>里程计坐标系；连续但会漂移</td>
+</tr>
+<tr>
+<td><code>base_footprint</code></td>
+<td>机器人在地面上的投影中心</td>
+</tr>
+</tbody>
+</table>
+<p>第一节课只有 <code>odom → base_footprint</code>。建图后多出 <code>map → odom</code>：短时运动靠里程计，长时间靠激光匹配把全局位姿“拉回”地图。</p>
+<p>TF 链框图（从全局到车体）：</p>
+<pre><code class="language-mermaid"><div class="mermaid">flowchart LR
+    map[map<br/>全局地图系] -->|SLAM 发布<br/>纠正漂移| odom[odom<br/>里程计系]
+    odom -->|仿真发布<br/>连续但会漂| base[base_footprint<br/>车体]
+    base --> laser[lidar_link<br/>雷达]
+</div></code></pre>
+<p>对照记忆：</p>
+<pre class="hljs"><code><div>第一节课：          odom → base_footprint → ... → lidar_link
+本节课补上：  map → odom → base_footprint → ... → lidar_link
+</div></code></pre>
+<p>建图运行时用 <code>ros2 run tf2_tools view_frames --ros-args -p use_sim_time:=true</code> 导出的<strong>实测 TF 树</strong>如下：</p>
+<p><img src="file:///home/lqf/mecamind_ros2/docs/images/10.3.2/tf_tree.png" alt="实测 TF 树"></p>
+<p>读图要点（课堂可提问学员）：</p>
+<ul>
+<li>最顶层 <code>map → odom</code> 由 SLAM 发布（图中频率约 15 Hz）——这条边第一节课是没有的。</li>
+<li><code>odom → base_footprint</code> 由仿真发布（约 30 Hz），是里程计的 TF 形式。</li>
+<li><code>base_footprint → base_link → 四个轮子/lidar_link/imu_link/camera_link</code> 来自 <code>robot_state_publisher</code> 读 URDF：轮子会转所以带时间戳持续更新，<code>lidar_link</code> 等固定安装件是静态变换（rate 显示 10000 即 static）。</li>
+<li>激光帧 <code>frame_id</code> 是 <code>lidar_link</code>，SLAM 通过整条链把每束激光换算到 <code>map</code> 坐标系里再&quot;画&quot;进栅格。</li>
+</ul>
+<h4 id="odom-里有什么怎么起作用"><code>/odom</code> 里有什么、怎么起作用</h4>
+<p><code>/odom</code> 的消息类型是 <code>nav_msgs/Odometry</code>。它不靠激光，主要靠轮子转了多少，估计「车现在在哪、速度多少」。可看成<strong>短时较准、长时会漂的计步器</strong>。</p>
+<p>消息里最重要的两块：</p>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>内容</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>pose.pose.position</code></td>
+<td><code>x, y</code>（<code>z</code> 地面车多为 0）</td>
+<td>车在 <code>odom</code> 坐标系里的位置</td>
+</tr>
+<tr>
+<td><code>pose.pose.orientation</code></td>
+<td>四元数（可换成偏航角 yaw）</td>
+<td>车头朝向</td>
+</tr>
+<tr>
+<td><code>twist.twist.linear</code></td>
+<td><code>x, y</code></td>
+<td>前后、横向速度</td>
+</tr>
+<tr>
+<td><code>twist.twist.angular</code></td>
+<td><code>z</code></td>
+<td>原地转动角速度</td>
+</tr>
+</tbody>
+</table>
+<p>另外还有时间戳 <code>header.stamp</code>、坐标系名（通常 <code>frame_id=odom</code>，<code>child_frame_id=base_footprint</code>）。仿真发 <code>/odom</code> 的同时，也发 TF <code>odom → base_footprint</code>，<strong>两者表达同一份里程计信息，只是格式不同</strong>：</p>
+<ul>
+<li><code>/odom</code> 话题：带速度信息，适合节点直接订阅（路线驱动就用它判断到没到路点）。</li>
+<li>TF <code>odom → base_footprint</code>：只有位姿，走 TF 树，<code>slam_toolbox</code> 用的是这条（实测 <code>ros2 topic info -v /odom</code> 可见 SLAM 并不订阅 <code>/odom</code> 话题）。</li>
+</ul>
+<p>odom 在建图里怎么起作用：</p>
+<pre><code class="language-mermaid"><div class="mermaid">flowchart TB
+    wheels[轮子转动] --> est[仿真里程计估计]
+    est --> odomMsg["/odom 话题<br/>位姿 + 速度"]
+    est --> odomTf["TF odom→base_footprint<br/>只有位姿"]
+    odomTf --> slam[SLAM Toolbox]
+    scan["/scan 激光"] --> slam
+    slam -->|短时| pred[用里程计预测<br/>车动了多少]
+    slam -->|长时| match[用激光对齐墙<br/>纠正漂移]
+    match --> mapTf["发布 map→odom<br/>补丁变换"]
+    slam --> grid["/map 栅格地图"]
+    odomMsg --> route[路线驱动<br/>判断是否到路点]
+</div></code></pre>
+<p>谁在用：</p>
+<table>
+<thead>
+<tr>
+<th>使用者</th>
+<th>用哪种形式</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SLAM Toolbox</td>
+<td>TF <code>odom → base_footprint</code></td>
+<td>两帧激光之间，先用里程计猜测车动了多少，再用激光对齐墙面纠正误差</td>
+</tr>
+<tr>
+<td>半自动路线驱动</td>
+<td><code>/odom</code> 话题</td>
+<td>读当前位置，判断是否到达路点、下一步往哪开</td>
+</tr>
+<tr>
+<td>RViz / 调试</td>
+<td>两种都可</td>
+<td>观察车是否在动、朝向是否合理</td>
+</tr>
+</tbody>
+</table>
+<p>建图时的分工可以记两句：</p>
+<ul>
+<li><strong>短距离</strong>：多信 odom（连续、平滑，适合预测）。</li>
+<li><strong>长时间</strong>：信激光匹配（打滑和误差会让 odom 慢慢漂）。SLAM 不直接改掉 odom，而是额外发布 <code>map → odom</code>，把漂掉的那一截补回来。</li>
+</ul>
+<p>启动建图后可查看一帧：</p>
+<pre class="hljs"><code><div>ros2 topic <span class="hljs-built_in">echo</span> /odom --once
+</div></code></pre>
+<p>重点看 <code>pose.pose.position.x/y</code> 是否随车移动变化。</p>
+<h3 id="24-双后端同一接口">2.4 双后端同一接口</h3>
+<p><code>mecamind_bringup/launch/mapping.launch.py</code> 用 <code>backend:=gazebo|lite</code> 切换仿真后端。<br>
+<strong>换后端时，下面这些话题名、消息类型、TF 关系保持不变</strong>，所以 SLAM、遥控、安全门、存图脚本都不用改。</p>
+<p>可以记成两条流水线：</p>
+<ol>
+<li><strong>感知上行（给 SLAM 用）</strong>：仿真发布 <code>/scan</code>、<code>/odom</code>、<code>odom→base_footprint</code>、<code>/clock</code> → <code>slam_toolbox</code> → 输出 <code>/map</code> 和 <code>map→odom</code>。</li>
+<li><strong>控制下行（开车）</strong>：键盘/路线驱动发 <code>/cmd_vel_nav</code> → <code>safety_gate</code> 做碰撞检查 → 输出 <code>/cmd_vel</code> → 仿真底盘执行。</li>
+</ol>
+<table>
+<thead>
+<tr>
+<th>接口</th>
+<th>消息/内容</th>
+<th>谁发布</th>
+<th>谁订阅 / 干什么用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/scan</code></td>
+<td><code>sensor_msgs/LaserScan</code>（一圈激光距离）</td>
+<td>Gazebo 或 lite 仿真</td>
+<td>SLAM、安全门：看见墙在哪</td>
+</tr>
+<tr>
+<td><code>/odom</code></td>
+<td><code>nav_msgs/Odometry</code>（轮式估计的位姿与速度）</td>
+<td>仿真</td>
+<td>路线驱动：判断到没到路点（SLAM 用的是它的 TF 形式 <code>odom→base_footprint</code>）</td>
+</tr>
+<tr>
+<td><code>/cmd_vel_nav</code></td>
+<td><code>geometry_msgs/Twist</code>（期望速度）</td>
+<td>遥控或路线驱动</td>
+<td>安全门入口；<strong>手动遥控必须 remap 到这里</strong></td>
+</tr>
+<tr>
+<td><code>/cmd_vel</code></td>
+<td><code>geometry_msgs/Twist</code>（实际执行速度）</td>
+<td>安全门</td>
+<td>仿真底盘：真正让车动起来</td>
+</tr>
+<tr>
+<td>TF</td>
+<td><code>odom → base_footprint</code>（第一节就有）</td>
+<td>仿真</td>
+<td>激光/车体在里程计坐标系里的位置</td>
+</tr>
+<tr>
+<td>TF</td>
+<td><code>map → odom</code>（本节 SLAM 新增）</td>
+<td><code>slam_toolbox</code></td>
+<td>用激光匹配纠正里程计长期漂移</td>
+</tr>
+<tr>
+<td><code>/clock</code></td>
+<td><code>rosgraph_msgs/Clock</code>（仿真时间）</td>
+<td>仿真</td>
+<td>所有 <code>use_sim_time:=true</code> 的节点统一对时</td>
+</tr>
+</tbody>
+</table>
+<p>注意区分两个速度话题：</p>
+<ul>
+<li><code>/cmd_vel_nav</code>：你“想怎么开”（可能贴墙、过快，会被拦）。</li>
+<li><code>/cmd_vel</code>：安全门放行后的速度；两个后端都只听这个开车。</li>
+</ul>
+<p>课堂优先 Gazebo；机器卡顿或无 GUI 时用 lite。接口相同，所以 CP2 验收标准也相同。</p>
+<h3 id="25-手动建图-vs-半自动建图">2.5 手动建图 vs 半自动建图</h3>
+<table>
+<thead>
+<tr>
+<th>模式</th>
+<th>启动方式</th>
+<th>谁开车</th>
+<th>何时存图</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>手动</td>
+<td><code>auto_route:=false</code>（默认）</td>
+<td>你用键盘遥控</td>
+<td>你主动调用 <code>map_saver_cli</code> 存图</td>
+</tr>
+<tr>
+<td>半自动</td>
+<td><code>auto_route:=true</code></td>
+<td><code>mapping_route_driver</code> 按路点巡航</td>
+<td>路线结束后自动保存到 <code>maps/</code></td>
+</tr>
+</tbody>
+</table>
+<p>半自动适合验收与重复实验；手动适合理解激光如何“刷”出墙体与房间。</p>
+<h3 id="26-地图文件格式">2.6 地图文件格式</h3>
+<p>ROS 导航常用一对文件：</p>
+<ul>
+<li><code>&lt;名称&gt;.pgm</code>：栅格图像（黑=占据，白=自由，灰=未知）。</li>
+<li><code>&lt;名称&gt;.yaml</code>：分辨率、原点、占用阈值等元数据。</li>
+</ul>
+<p>本项目默认保存到仓库内 <code>maps/</code> 目录（相对路径），例如：</p>
+<pre class="hljs"><code><div>maps/mecamind_three_room_map.pgm
+maps/mecamind_three_room_map.yaml
+</div></code></pre>
+<p>生成物默认被 <code>.gitignore</code> 忽略；验收合格、要留给下节课用的地图可用 <code>git add -f</code> 强制纳入版本库。</p>
+<h3 id="27-地图质量分析看什么">2.7 地图质量分析看什么</h3>
+<p><code>mecamind_map_quality_analyzer</code> 对照三房间世界几何，报告：</p>
+<ul>
+<li><strong>coverage</strong>：感兴趣区域内已观测（自由+占据）比例。</li>
+<li><strong>unknown_ratio</strong>：未知栅格比例。</li>
+<li><strong>largest_free_component_ratio</strong>：最大连通自由区占比（是否“房间被墙封死/撕裂”）。</li>
+<li><strong>missing_walls</strong>：外墙采样是否明显缺失。</li>
+<li><strong>verdict</strong>：如 <code>commercial_ready</code>、<code>navigation_ready_best_effort</code>、<code>needs_remap</code>。</li>
+</ul>
+<p>课堂验收要求 verdict 至少达到 <code>navigation_ready_best_effort</code>；CP2 脚本按此判定。</p>
+<h3 id="28-slam-toolbox--cartographer--rtab-map-怎么选">2.8 SLAM Toolbox / Cartographer / RTAB-Map 怎么选</h3>
+<table>
+<thead>
+<tr>
+<th>方案</th>
+<th>特点</th>
+<th>本课为何用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>SLAM Toolbox</strong></td>
+<td>2D 激光、生命周期节点、与 Nav2 生态契合、参数易调</td>
+<td>默认方案：三房间 2D 建图足够</td>
+</tr>
+<tr>
+<td><strong>Cartographer</strong></td>
+<td>Google 出品，2D/3D，子图与全局优化强，配置与依赖更重</td>
+<td>大场景/多传感器融合时可对比，非本课主线</td>
+</tr>
+<tr>
+<td><strong>RTAB-Map</strong></td>
+<td>视觉/RGB-D 为主，可带激光；算力与标定要求更高</td>
+<td>后续有深度相机时再考虑</td>
+</tr>
+</tbody>
+</table>
+<p>本课场景是平面激光 + 室内平面地图，选 SLAM Toolbox 最直接。</p>
+<h2 id="3-启动前准备">3. 启动前准备</h2>
+<pre class="hljs"><code><div><span class="hljs-built_in">cd</span> ~/mecamind_ros2
+bash scripts/cleanup_ros2.sh   <span class="hljs-comment"># 若上节课仿真未关干净</span>
+bash scripts/build.sh
+<span class="hljs-built_in">source</span> /opt/ros/jazzy/setup.bash
+<span class="hljs-built_in">source</span> ~/mecamind_ros2/install/setup.bash
+</div></code></pre>
+<p>WSLg 下若 RViz/Gazebo 报 display 错误：</p>
+<pre class="hljs"><code><div><span class="hljs-built_in">export</span> DISPLAY=:0
+<span class="hljs-built_in">export</span> WAYLAND_DISPLAY=wayland-0
+</div></code></pre>
+<h2 id="4-lab-1手动建图gazebo--rviz">4. LAB 1：手动建图（Gazebo + RViz）</h2>
+<p>终端 1 —— 启动建图（默认后端 Gazebo，开 GUI 与 RViz）：</p>
+<pre class="hljs"><code><div><span class="hljs-built_in">cd</span> ~/mecamind_ros2
+<span class="hljs-built_in">source</span> /opt/ros/jazzy/setup.bash
+<span class="hljs-built_in">source</span> install/setup.bash
+ros2 launch mecamind_bringup mapping.launch.py
+</div></code></pre>
+<p>常用参数：</p>
+<table>
+<thead>
+<tr>
+<th>参数</th>
+<th>默认值</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>backend</code></td>
+<td><code>gazebo</code></td>
+<td><code>gazebo</code> 或 <code>lite</code></td>
+</tr>
+<tr>
+<td><code>use_gui</code></td>
+<td><code>true</code></td>
+<td>是否打开 Gazebo 窗口</td>
+</tr>
+<tr>
+<td><code>with_rviz</code></td>
+<td><code>true</code></td>
+<td>是否打开建图 RViz</td>
+</tr>
+<tr>
+<td><code>auto_route</code></td>
+<td><code>false</code></td>
+<td>是否启用半自动路线</td>
+</tr>
+<tr>
+<td><code>map_save_path</code></td>
+<td><code>maps/mecamind_three_room_map</code></td>
+<td>地图保存前缀（相对项目/启动目录）</td>
+</tr>
+</tbody>
+</table>
+<p>启动成功后，Gazebo 窗口应显示三房间世界与机器人（机器人出生在地图原点附近，Entity Tree 中能看到 <code>three_room_house</code> 与 <code>mecamind_mecanum</code>）：</p>
+<p><img src="file:///home/lqf/mecamind_ros2/docs/images/10.3.2/gazebo_three_room_world.png" alt="Gazebo 三房间世界"></p>
+<p>终端 2 —— 遥控（注意发到安全门入口）：</p>
+<pre class="hljs"><code><div><span class="hljs-built_in">source</span> /opt/ros/jazzy/setup.bash
+<span class="hljs-built_in">source</span> ~/mecamind_ros2/install/setup.bash
+ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -r /cmd_vel:=/cmd_vel_nav
+</div></code></pre>
+<p>建议线速度约 <code>0.2 m/s</code>、角速度约 <code>0.5 rad/s</code>。缓慢驶过客厅、走廊、卧室，让激光多扫墙面与门口；避免高速冲撞导致安全门长时间刹停。</p>
+<p>RViz 中应看到：</p>
+<ul>
+<li>Fixed Frame 为 <code>map</code>。</li>
+<li><code>/map</code> 栅格逐渐填满。</li>
+<li><code>/scan</code> 激光贴墙。</li>
+<li>机器人位姿随运动更新。</li>
+</ul>
+<p>建图初期的 RViz 画面像这样——白色是已确认的自由区，黑色是墙，深灰色是还没扫到的未知区；红色小点是当前激光打在墙上的位置，中间的坐标轴是机器人 TF：</p>
+<p><img src="file:///home/lqf/mecamind_ros2/docs/images/10.3.2/rviz_mapping_early.png" alt="RViz 建图初期"></p>
+<p>给学员指出三件事：（1）机器人一动，白色区域就跟着&quot;刷&quot;开；（2）激光点始终贴在黑色墙边上，说明扫描匹配正常；（3）如果地图完全空白，先检查 Fixed Frame 是否为 <code>map</code>、<code>use_sim_time</code> 是否开启（见第 9 节排错）。</p>
+<p>存图（路线结束后也可用同一命令）：</p>
+<pre class="hljs"><code><div><span class="hljs-built_in">cd</span> ~/mecamind_ros2
+ros2 run nav2_map_server map_saver_cli -f maps/mecamind_three_room_map \
+  --ros-args -p map_subscribe_transient_local:=<span class="hljs-literal">true</span> -p use_sim_time:=<span class="hljs-literal">true</span>
+</div></code></pre>
+<p>确认生成：</p>
+<pre class="hljs"><code><div><span class="hljs-built_in">ls</span> -la maps/mecamind_three_room_map.pgm maps/mecamind_three_room_map.yaml
+</div></code></pre>
+<p>结束：在 launch 终端按 <code>Ctrl+C</code>，等待子进程退出。</p>
+<h2 id="5-lab-2半自动建图">5. LAB 2：半自动建图</h2>
+<pre class="hljs"><code><div><span class="hljs-built_in">cd</span> ~/mecamind_ros2
+<span class="hljs-built_in">source</span> /opt/ros/jazzy/setup.bash
+<span class="hljs-built_in">source</span> install/setup.bash
+ros2 launch mecamind_bringup mapping.launch.py \
+  auto_route:=<span class="hljs-literal">true</span> \
+  map_save_path:=maps/mecamind_three_room_map \
+  route_report_path:=maps/mecamind_three_room_route_report.json
+</div></code></pre>
+<p><code>mapping_route_driver</code> 会按 <code>mecamind_mapping_route.yaml</code> 中的路点巡航（9 个路点：客厅入口 → 下方走廊 → 门厅 → 折返 → 右上走廊 → 卧室通道 → 卧室入口 → 卧室中心），结束后自动存图并写路线报告，默认再关闭整个 launch。</p>
+<p>路线跑完后，RViz 俯视（视图切到 TopDownOrtho）应能看到完整闭合的三房间地图，机器人停在右下角最后一个路点：</p>
+<p><img src="file:///home/lqf/mecamind_ros2/docs/images/10.3.2/rviz_mapping_done.png" alt="RViz 建图完成俯视"></p>
+<p>查看报告：</p>
+<pre class="hljs"><code><div>python3 -m json.tool maps/mecamind_three_room_route_report.json | <span class="hljs-built_in">head</span> -40
+</div></code></pre>
+<p>关注 <code>reached_waypoints</code> / <code>route_size</code>、<code>skipped_waypoints</code>、<code>auto_map_saved</code>。路点大量 <code>skipped</code> 时，地图往往不完整，需要重跑或改手动补扫。</p>
+<p>实测参考（Gazebo 后端一次完整运行）：<code>reached_waypoints=9/9</code>、<code>skipped=0</code>、<code>auto_map_saved=true</code>，全程约 5～6 分钟（WSL2 下 Gazebo RTF &lt; 1，比墙钟慢是正常的；路线驱动内部按仿真时间计超时，不会因此误判）。</p>
+<h2 id="6-lab-3轻量仿真建图兜底">6. LAB 3：轻量仿真建图（兜底）</h2>
+<pre class="hljs"><code><div>ros2 launch mecamind_bringup mapping.launch.py \
+  backend:=lite \
+  use_gui:=<span class="hljs-literal">false</span> \
+  with_rviz:=<span class="hljs-literal">true</span> \
+  auto_route:=<span class="hljs-literal">true</span> \
+  map_save_path:=maps/mecamind_lite_map
+</div></code></pre>
+<p>无显示器时可加 <code>with_rviz:=false</code>。接口与 Gazebo 相同，适合低配机与 CI。</p>
+<h2 id="7-lab-4地图质量分析与资产清单">7. LAB 4：地图质量分析与资产清单</h2>
+<pre class="hljs"><code><div><span class="hljs-built_in">cd</span> ~/mecamind_ros2
+<span class="hljs-built_in">source</span> /opt/ros/jazzy/setup.bash
+<span class="hljs-built_in">source</span> install/setup.bash
+
+WORLD=<span class="hljs-string">&quot;<span class="hljs-subst">$(ros2 pkg prefix mecamind_tools)</span>/share/mecamind_tools/worlds/three_room_house.world&quot;</span>
+
+ros2 run mecamind_tools mecamind_map_quality_analyzer \
+  maps/mecamind_three_room_map.yaml \
+  --world <span class="hljs-string">&quot;<span class="hljs-variable">$WORLD</span>&quot;</span> --json | <span class="hljs-built_in">tee</span> maps/mecamind_three_room_quality.json
+
+ros2 run mecamind_tools mecamind_map_asset_manager maps \
+  --world <span class="hljs-string">&quot;<span class="hljs-variable">$WORLD</span>&quot;</span> \
+  --output maps/mecamind_manifest.json
+</div></code></pre>
+<p>两个后端在同一条半自动路线下产出的 PGM 地图对比（黑=占据、白=自由、灰=未知；能看出四面外墙、两条内隔墙和几件家具的轮廓一致）：</p>
+<p><img src="file:///home/lqf/mecamind_ros2/docs/images/10.3.2/map_pgm_compare.png" alt="双后端 PGM 地图对比"></p>
+<p>合格示例特征（数值因后端略有差异）：</p>
+<ul>
+<li><code>coverage</code> 较高（例如 &gt; 0.85）。</li>
+<li><code>missing_walls</code> 为空或很少。</li>
+<li><code>verdict</code> 为 <code>commercial_ready</code> 或 <code>navigation_ready_best_effort</code>。</li>
+</ul>
+<p>实测参考（Gazebo 后端半自动建图一次运行的质量报告）：</p>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th>实测值</th>
+<th>解读</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>coverage</code></td>
+<td>0.946</td>
+<td>ROI 内 94.6% 的栅格已观测（自由或占据）</td>
+</tr>
+<tr>
+<td><code>unknown_ratio</code></td>
+<td>0.054</td>
+<td>只剩 5.4% 未知，主要在家具背面的激光阴影</td>
+</tr>
+<tr>
+<td><code>largest_free_component_ratio</code></td>
+<td>0.9996</td>
+<td>自由区几乎完全连通，房间没有被&quot;假墙&quot;隔断</td>
+</tr>
+<tr>
+<td><code>wall_scores</code></td>
+<td>北 0.94 / 南 1.0 / 东 1.0 / 西 1.0</td>
+<td>四面外墙采样得分，越接近 1 越完整</td>
+</tr>
+<tr>
+<td><code>missing_walls</code></td>
+<td>空</td>
+<td>没有整面缺失的墙</td>
+</tr>
+<tr>
+<td><code>verdict</code></td>
+<td><code>navigation_ready_best_effort</code></td>
+<td>达到课堂验收线，可供下节课 Nav2 使用</td>
+</tr>
+</tbody>
+</table>
+<p>若为 <code>needs_remap</code>：沿缺失墙边慢速再扫一遍，或重新半自动建图；建图前务必 <code>cleanup_ros2.sh</code>，避免多套仿真抢话题。</p>
+<h2 id="8-cp2-自动验收">8. CP2 自动验收</h2>
+<pre class="hljs"><code><div><span class="hljs-built_in">cd</span> ~/mecamind_ros2
+bash scripts/cleanup_ros2.sh --all   <span class="hljs-comment"># 确认无残留后再跑</span>
+bash scripts/test_cp2.sh             <span class="hljs-comment"># 默认 lite 后端</span>
+</div></code></pre>
+<p>Gazebo headless：</p>
+<pre class="hljs"><code><div>MECAMIND_CP2_BACKEND=gazebo bash scripts/test_cp2.sh
+</div></code></pre>
+<p>脚本流程：半自动建图 → 检查 PGM/YAML/路线报告 → 质量分析 → 资产清单。成功标志：</p>
+<pre class="hljs"><code><div>MECAMIND_CP2_OK
+</div></code></pre>
+<p>产物示例：</p>
+<pre class="hljs"><code><div>maps/mecamind_cp2_lite_map.pgm
+maps/mecamind_cp2_lite_map.yaml
+maps/mecamind_cp2_lite_route_report.json
+maps/mecamind_cp2_lite_quality.json
+maps/mecamind_cp2_lite_manifest.json
+</div></code></pre>
+<h2 id="9-常见问题">9. 常见问题</h2>
+<h3 id="91-rviz-里地图一直是空的">9.1 RViz 里地图一直是空的</h3>
+<p>检查：</p>
+<pre class="hljs"><code><div>ros2 topic <span class="hljs-built_in">echo</span> --once /clock
+ros2 topic hz /scan
+ros2 topic <span class="hljs-built_in">echo</span> --once /map
+ros2 run tf2_tools view_frames --ros-args -p use_sim_time:=<span class="hljs-literal">true</span>
+</div></code></pre>
+<p>确认 Fixed Frame 为 <code>map</code>，且存在 <code>map → odom → base_footprint</code>。</p>
+<h3 id="92-tf_old_data--时间跳变">9.2 TF_OLD_DATA / 时间跳变</h3>
+<p>多半是残留的旧 Gazebo/SLAM 仍在发 TF。执行：</p>
+<pre class="hljs"><code><div>bash scripts/cleanup_ros2.sh --all
+</div></code></pre>
+<p>再只启动一套建图。</p>
+<h3 id="93-机器人不动或一直被刹停">9.3 机器人不动或一直被刹停</h3>
+<p>确认遥控 remap 到 <code>/cmd_vel_nav</code>；查看安全门是否因前方过近而拦截：</p>
+<pre class="hljs"><code><div>ros2 topic <span class="hljs-built_in">echo</span> /cmd_vel_nav
+ros2 topic <span class="hljs-built_in">echo</span> /cmd_vel
+</div></code></pre>
+<h3 id="94-地图缺墙覆盖率低">9.4 地图缺墙、覆盖率低</h3>
+<ul>
+<li>是否高速掠过、未正对墙面。</li>
+<li>半自动是否大量 <code>skipped</code> 路点。</li>
+<li>是否多套仿真同时运行导致激光/TF 混乱。</li>
+<li>存图后可用质量分析定位 <code>missing_walls</code>。</li>
+</ul>
+<h3 id="95-map_saver-报没有地图">9.5 <code>map_saver</code> 报没有地图</h3>
+<p><code>/map</code> 多为 transient local QoS，且建图节点都在仿真时钟上。半自动路线驱动会缓存 <code>/map</code> 并直接写 PGM/YAML；手动存图请用：</p>
+<pre class="hljs"><code><div>ros2 run nav2_map_server map_saver_cli -f maps/mecamind_three_room_map \
+  --ros-args -p map_subscribe_transient_local:=<span class="hljs-literal">true</span> -p use_sim_time:=<span class="hljs-literal">true</span>
+</div></code></pre>
+<p>且 SLAM 节点必须仍在运行。轻量后端下若省略 <code>use_sim_time:=true</code>，常见报错是 <code>Failed to spin map subscription</code>；Gazebo 上有时仍能存图，但课堂统一加上更稳妥。</p>
+<h3 id="96-gazebo-建图很慢">9.6 Gazebo 建图很慢</h3>
+<p>WSL2 下 RTF 常 &lt; 1。半自动超时可调环境变量（CP2 默认 600s）：</p>
+<pre class="hljs"><code><div>MECAMIND_CP2_TIMEOUT_SEC=900 MECAMIND_CP2_BACKEND=gazebo bash scripts/test_cp2.sh
+</div></code></pre>
+<h2 id="10-本节验收清单">10. 本节验收清单</h2>
+<ul>
+<li><input type="checkbox" id="checkbox0"><label for="checkbox0">能画出建图数据流（scan/odom/TF/clock → SLAM → map）。</label></li>
+<li><input type="checkbox" id="checkbox1"><label for="checkbox1">能说明 <code>map</code> 与 <code>odom</code> 的区别。</label></li>
+<li><input type="checkbox" id="checkbox2"><label for="checkbox2">Gazebo 手动建图并在 RViz 看到 <code>/map</code> 增长。</label></li>
+<li><input type="checkbox" id="checkbox3"><label for="checkbox3">保存完整的 PGM/YAML 地图对到 <code>maps/</code>。</label></li>
+<li><input type="checkbox" id="checkbox4"><label for="checkbox4">半自动建图能写出路线报告。</label></li>
+<li><input type="checkbox" id="checkbox5"><label for="checkbox5">质量分析 verdict 达到可导航级别。</label></li>
+<li><input type="checkbox" id="checkbox6"><label for="checkbox6"><code>scripts/test_cp2.sh</code>（lite）输出 <code>MECAMIND_CP2_OK</code>。</label></li>
+<li><input type="checkbox" id="checkbox7"><label for="checkbox7">（选做）Gazebo 后端 CP2 也通过。</label></li>
+</ul>
+<h2 id="11-课后作业">11. 课后作业</h2>
+<p>必做：</p>
+<ol>
+<li>提交一张建图过程 RViz 截图（含 Map + LaserScan）。</li>
+<li>提交 <code>maps/</code> 下的一对 PGM/YAML（可自命名）。</li>
+<li>提交对应的质量分析 JSON，并口头说明 coverage 与 missing_walls。</li>
+<li>用文字说明：若关掉 <code>use_sim_time</code>，建图会出现什么现象。</li>
+</ol>
+<p>选做：</p>
+<ol>
+<li>对比同一路线在 <code>backend:=gazebo</code> 与 <code>backend:=lite</code> 下的质量报告差异。</li>
+<li>调整 <code>mecamind_slam_toolbox_params.yaml</code> 中的 <code>resolution</code> 或 <code>minimum_travel_distance</code>，观察地图细腻度与建图速度变化（改后需重新 <code>build</code> 并重启 launch）。</li>
+<li>查阅 Cartographer 或 RTAB-Map 文档，写 200 字以内的“为何本课不选它”的理由。</li>
+</ol>
+<h2 id="12-下一次课预告">12. 下一次课预告</h2>
+<p>下一次课加载本节地图，启动 Nav2（Map Server、AMCL、Planner、Controller），完成命名目标导航与多点巡航。</p>
+<hr>
+<p>附：本讲义所有截图（<code>docs/images/10.3.2/</code>）均来自当前代码在 WSL2 + ROS 2 Jazzy + Gazebo Harmonic 上的一次真实运行：半自动路线 9/9 路点全部到达、自动存图成功、质量分析 verdict 为 <code>navigation_ready_best_effort</code>。复现命令即第 5 节 LAB 2；节点图由 <code>rqt_graph</code> 数据导出，TF 树由 <code>tf2_tools view_frames</code> 导出。</p>
+
+</body>
+</html>

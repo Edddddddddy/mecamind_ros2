@@ -5,9 +5,12 @@ slam_toolbox:
     odom_frame: odom
     map_frame: map
     base_frame: base_footprint
-    scan_topic: /scan_raw
+    scan_topic: /scan
     resolution: 0.05
     max_laser_range: 8.0
+    # 360 线激光在 >1.4m 处相邻光束间距超过一个栅格，命中数达不到 2，
+    # 距离稍远的墙体将永远无法标记为占据，因此单次命中即计入。
+    min_pass_through: 1
     minimum_time_interval: 0.35
     transform_timeout: 0.2
     tf_buffer_duration: 30.0

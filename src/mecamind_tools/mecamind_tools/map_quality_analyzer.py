@@ -110,6 +110,12 @@ def load_map_yaml(path: str | Path) -> OccupancyMap:
     if not image_path.is_absolute():
         image_path = yaml_path.parent / image_path
     width, height, pixels = _load_pgm(image_path)
+    # map_saver 写出的 PGM 第 0 行对应 y 最大处；这里翻转为第 0 行对应
+    # origin（y 最小处），使 world_to_cell 的行号与世界坐标一致。
+    flipped: list[int] = []
+    for row in range(height - 1, -1, -1):
+        flipped.extend(pixels[row * width : (row + 1) * width])
+    pixels = tuple(flipped)
     origin = list(meta.get("origin", [0.0, 0.0, 0.0]))
     return OccupancyMap(
         width=width,
@@ -150,11 +156,16 @@ def _counts_in_world_roi(
     world_path: str | Path,
     padding: float = 0.12,
 ) -> tuple[dict[str, int], dict[str, float]]:
+    """统计世界内部 ROI 的覆盖情况。
+
+    ROI 向内收缩一个墙厚（padding），只统计机器人有可能观测到的区域；
+    外墙外侧永远不可见，算进去会把覆盖率上限压到 90% 以下。
+    """
     world = load_world_geometry(world_path)
-    min_x = world.min_x - padding
-    max_x = world.max_x + padding
-    min_y = world.min_y - padding
-    max_y = world.max_y + padding
+    min_x = world.min_x + padding
+    max_x = world.max_x - padding
+    min_y = world.min_y + padding
+    max_y = world.max_y - padding
     x_count = max(1, int(math.ceil((max_x - min_x) / grid.resolution)))
     y_count = max(1, int(math.ceil((max_y - min_y) / grid.resolution)))
     counts = {"free": 0, "occupied": 0, "unknown": 0}
@@ -234,6 +245,29 @@ def _sample_box(box: AxisAlignedBox, step: float) -> Iterable[tuple[float, float
             yield x, y
 
 
+def _cell_near_boundary(
+    grid: OccupancyMap,
+    x: float,
+    y: float,
+    tolerance_cells: int = 2,
+) -> tuple[int, int] | None:
+    """world_to_cell 的宽松版：允许采样点落在地图边界外不超过 tolerance_cells。
+
+    SLAM 地图通常恰好裁剪在墙体内侧面，墙体外半部分不在栅格范围内，
+    这里把边界附近的采样点收敛到最近的边界栅格，避免误判墙体缺失。
+    """
+    col = int((x - grid.origin_x) / grid.resolution)
+    row = int((y - grid.origin_y) / grid.resolution)
+    if col < -tolerance_cells or col >= grid.width + tolerance_cells:
+        return None
+    if row < -tolerance_cells or row >= grid.height + tolerance_cells:
+        return None
+    return (
+        min(max(row, 0), grid.height - 1),
+        min(max(col, 0), grid.width - 1),
+    )
+
+
 def _wall_scores_from_world(grid: OccupancyMap, world_path: str | Path | None) -> dict[str, float]:
     if not world_path:
         return {}
@@ -247,7 +281,7 @@ def _wall_scores_from_world(grid: OccupancyMap, world_path: str | Path | None) -
         hits = 0
         for x, y in _sample_box(wall, grid.resolution):
             total += 1
-            cell = grid.world_to_cell(x, y)
+            cell = _cell_near_boundary(grid, x, y)
             if cell is None:
                 continue
             if _occupied_near(grid, cell[0], cell[1]):

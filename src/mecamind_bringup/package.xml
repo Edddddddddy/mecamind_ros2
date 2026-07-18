@@ -12,6 +12,9 @@
   <exec_depend>mecamind_gazebo</exec_depend>
   <exec_depend>mecamind_tools</exec_depend>
   <exec_depend>teleop_twist_keyboard</exec_depend>
+  <exec_depend>slam_toolbox</exec_depend>
+  <exec_depend>nav2_map_server</exec_depend>
+  <exec_depend>rviz2</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

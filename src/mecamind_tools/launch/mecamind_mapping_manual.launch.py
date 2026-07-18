@@ -31,10 +31,9 @@ def generate_launch_description():
                 "use_sim_time": True,
                 "autostart": True,
                 "use_lifecycle_manager": False,
-                "scan_topic": "/scan_raw",
+                "scan_topic": "/scan",
             },
         ],
-        remappings=[("/scan", "/scan_raw")],
     )
 
     slam_activator = TimerAction(
@@ -68,9 +67,9 @@ def generate_launch_description():
         name="mecamind_mapping_safety_gate",
         output="screen",
         parameters=[
-            {"scan_topic": "/scan_raw"},
-            {"input_cmd_topic": "/controller/cmd_vel_nav"},
-            {"output_cmd_topic": "/controller/cmd_vel"},
+            {"scan_topic": "/scan"},
+            {"input_cmd_topic": "/cmd_vel_nav"},
+            {"output_cmd_topic": "/cmd_vel"},
         ],
     )
 
@@ -86,7 +85,7 @@ def generate_launch_description():
                 "rviz_config",
                 default_value=f"{package_share}/rviz/mecamind_mapping.rviz",
             ),
-            DeclareLaunchArgument("lidar_noise_std", default_value="0.0"),
+            DeclareLaunchArgument("lidar_noise_std", default_value="0.01"),
             DeclareLaunchArgument("lidar_dropout_prob", default_value="0.0"),
             DeclareLaunchArgument("odom_xy_noise_std", default_value="0.0"),
             DeclareLaunchArgument("odom_yaw_noise_std", default_value="0.0"),
@@ -96,6 +95,11 @@ def generate_launch_description():
                 executable="mecamind_simulator_node",
                 name="mecamind_simulator",
                 output="screen",
+                remappings=[
+                    ("/scan_raw", "/scan"),
+                    ("/imu/data_raw", "/imu/data"),
+                    ("/controller/cmd_vel", "/cmd_vel"),
+                ],
                 parameters=[
                     {"world_path": world},
                     {"initial_x": 0.0},

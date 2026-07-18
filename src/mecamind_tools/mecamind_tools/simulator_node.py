@@ -61,7 +61,9 @@ class MecaMindSimulatorNode(Node):
         self.declare_parameter("lidar_angle_max", math.pi)
         self.declare_parameter("publish_clock", True)
         self.declare_parameter("random_seed", 8)
-        self.declare_parameter("lidar_noise_std", 0.0)
+        # 默认带 1cm 高斯噪声：零噪声时命中值恰好落在栅格边界，
+        # SLAM 的取整会把北/东方向墙面推到栅格外，导致墙体无法标记占据。
+        self.declare_parameter("lidar_noise_std", 0.01)
         self.declare_parameter("lidar_dropout_prob", 0.0)
         self.declare_parameter("odom_xy_noise_std", 0.0)
         self.declare_parameter("odom_yaw_noise_std", 0.0)

@@ -32,10 +32,9 @@ def generate_launch_description():
                 "use_sim_time": True,
                 "autostart": True,
                 "use_lifecycle_manager": False,
-                "scan_topic": "/scan_raw",
+                "scan_topic": "/scan",
             },
         ],
-        remappings=[("/scan", "/scan_raw")],
     )
 
     auto_explore = TimerAction(
@@ -46,6 +45,7 @@ def generate_launch_description():
                 executable="mecamind_auto_explore",
                 name="mecamind_auto_explore",
                 output="screen",
+                remappings=[("/scan_raw", "/scan")],
                 parameters=[
                     {"auto_save_map": True},
                     {"map_save_path": map_save_path},
@@ -56,7 +56,7 @@ def generate_launch_description():
                     {"lateral_speed": 0.06},
                     {"angular_speed": 0.45},
                     {"angular_speed_slow": 0.25},
-                    {"cmd_topic": "/controller/cmd_vel_nav"},
+                    {"cmd_topic": "/cmd_vel_nav"},
                     {"cross_goal_timeout_sec": 75.0},
                     {"cross_goal_stall_sec": 30.0},
                     {"checkpoint_save_interval_sec": 90.0},
@@ -98,9 +98,9 @@ def generate_launch_description():
         name="mecamind_mapping_coverage_safety_gate",
         output="screen",
         parameters=[
-            {"scan_topic": "/scan_raw"},
-            {"input_cmd_topic": "/controller/cmd_vel_nav"},
-            {"output_cmd_topic": "/controller/cmd_vel"},
+            {"scan_topic": "/scan"},
+            {"input_cmd_topic": "/cmd_vel_nav"},
+            {"output_cmd_topic": "/cmd_vel"},
         ],
     )
 
@@ -113,14 +113,14 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "map_save_path",
-                default_value="~/.ros/mecamind_three_room_map_coverage",
+                default_value="maps/mecamind_three_room_map_coverage",
             ),
             DeclareLaunchArgument("with_rviz", default_value="false"),
             DeclareLaunchArgument(
                 "rviz_config",
                 default_value=f"{package_share}/rviz/mecamind_mapping.rviz",
             ),
-            DeclareLaunchArgument("lidar_noise_std", default_value="0.0"),
+            DeclareLaunchArgument("lidar_noise_std", default_value="0.01"),
             DeclareLaunchArgument("lidar_dropout_prob", default_value="0.0"),
             DeclareLaunchArgument("odom_xy_noise_std", default_value="0.0"),
             DeclareLaunchArgument("odom_yaw_noise_std", default_value="0.0"),
@@ -130,6 +130,11 @@ def generate_launch_description():
                 executable="mecamind_simulator_node",
                 name="mecamind_simulator",
                 output="screen",
+                remappings=[
+                    ("/scan_raw", "/scan"),
+                    ("/imu/data_raw", "/imu/data"),
+                    ("/controller/cmd_vel", "/cmd_vel"),
+                ],
                 parameters=[
                     {"world_path": world},
                     {"initial_x": -3.2},

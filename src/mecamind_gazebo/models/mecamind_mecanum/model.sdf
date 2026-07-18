@@ -1,7 +1,8 @@
 <?xml version="1.0"?>
 <sdf version="1.9">
   <model name="mecamind_mecanum">
-    <pose>-3.2 -2.3 0.10 0 0 0</pose>
+    <!-- 与轻量仿真一致，出生在地图原点，便于共用建图路线 -->
+    <pose>0 0 0.10 0 0 0</pose>
     <self_collide>false</self_collide>
 
     <link name="base_link">
