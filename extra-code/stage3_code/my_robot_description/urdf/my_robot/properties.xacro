@@ -1,0 +1,38 @@
+<?xml version="1.0"?>
+<!--
+  文件说明：my_robot 的全部尺寸/质量参数（xacro property）。
+  被 my_robot.urdf.xacro 最先 include，其余子文件都用
+  ${名字} 引用这里的数值。想改机器人尺寸只需改这一个文件。
+  数值参考 TurtleBot3 Burger 的真实参数，单位：米、千克。
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- 底盘（长方体）的外形尺寸和质量 -->
+  <xacro:property name="base_length" value="0.178"/>
+  <xacro:property name="base_width" value="0.138"/>
+  <xacro:property name="base_height" value="0.109"/>
+  <xacro:property name="base_mass" value="0.826"/>
+
+  <!-- 驱动轮：ygap 是轮心到底盘中线的横向距离，
+       separation 是两轮间距（差速运动学会用到） -->
+  <xacro:property name="wheel_radius" value="0.033"/>
+  <xacro:property name="wheel_width" value="0.018"/>
+  <xacro:property name="wheel_mass" value="0.0285"/>
+  <xacro:property name="wheel_ygap" value="0.080"/>
+  <xacro:property name="wheel_separation" value="0.160"/>
+
+  <!-- 后万向轮（小球）：x 为负表示装在底盘后方，
+       z 为负表示低于底盘底面，用于支撑车身 -->
+  <xacro:property name="caster_radius" value="0.005"/>
+  <xacro:property name="caster_mass" value="0.005"/>
+  <xacro:property name="caster_x" value="-0.081"/>
+  <xacro:property name="caster_z" value="-0.004"/>
+
+  <!-- 激光雷达（LiDAR）：scan_z 用表达式计算——
+       安装高度 = 底盘顶面 + 雷达自身高度的一半 -->
+  <xacro:property name="scan_radius" value="0.050"/>
+  <xacro:property name="scan_height" value="0.040"/>
+  <xacro:property name="scan_mass" value="0.114"/>
+  <xacro:property name="scan_z" value="${base_height + scan_height / 2.0}"/>
+
+</robot>

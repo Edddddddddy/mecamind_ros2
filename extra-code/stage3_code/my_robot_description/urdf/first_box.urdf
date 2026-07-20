@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<!--
+  文件说明：最简单的 URDF——只有一个盒子的"机器人"。
+  演示概念：robot / link / visual / geometry / origin 的基本结构。
+  查看方式：
+    ros2 launch my_robot_description minimal_display.launch.py \
+      model:=first_box.urdf
+  或先用 check_urdf first_box.urdf 检查语法。
+-->
+<robot name="my_first_robot">
+
+  <!-- link 是机器人的一个刚体部件；base_link 习惯上是底盘 -->
+  <link name="base_link">
+    <!-- visual 只影响显示外观，不参与碰撞和物理计算 -->
+    <visual>
+      <!-- origin：几何体相对 link 原点的偏移
+           xyz 单位是米，rpy 是绕 x/y/z 轴的旋转（弧度）。
+           这里把盒子上移 0.1 m，使盒子底面正好落在原点平面上
+           （box 的原点默认在几何中心，高 0.2 m 的一半是 0.1） -->
+      <origin xyz="0 0 0.1" rpy="0 0 0"/>
+      <geometry>
+        <!-- box size：长(x) 宽(y) 高(z)，单位米 -->
+        <box size="0.6 0.4 0.2"/>
+      </geometry>
+    </visual>
+  </link>
+
+</robot>
+

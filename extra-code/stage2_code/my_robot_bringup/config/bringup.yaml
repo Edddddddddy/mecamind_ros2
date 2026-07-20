@@ -1,0 +1,10 @@
+/turtlesim:
+  ros__parameters:
+    background_r: 30
+    background_g: 100
+    background_b: 200
+
+/param_publisher:
+  ros__parameters:
+    frequency: 1.0
+    message: "Turtlesim is running!"

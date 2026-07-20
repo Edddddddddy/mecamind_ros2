@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<!--
+  文件说明：my_robot 的颜色材质定义（RViz 中显示用）。
+  先用 property 定义 rgba 颜色值，再声明 material 供各
+  link 的 visual 按名字引用。Gazebo 不认这里的 material，
+  仿真颜色见 gazebo_materials.xacro（两处共用同一批颜色值）。
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- rgba 四个分量取值 0~1，最后一个是不透明度 -->
+  <xacro:property name="color_blue" value="0.0 0.0 0.8 1.0"/>
+  <xacro:property name="color_black" value="0.0 0.0 0.0 1.0"/>
+  <xacro:property name="color_grey" value="0.5 0.5 0.5 1.0"/>
+  <xacro:property name="color_dark_grey" value="0.2 0.2 0.2 1.0"/>
+
+  <material name="blue">
+    <color rgba="${color_blue}"/>
+  </material>
+
+  <material name="black">
+    <color rgba="${color_black}"/>
+  </material>
+
+  <material name="grey">
+    <color rgba="${color_grey}"/>
+  </material>
+
+  <material name="dark_grey">
+    <color rgba="${color_dark_grey}"/>
+  </material>
+
+</robot>

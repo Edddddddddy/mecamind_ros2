@@ -1,0 +1,23 @@
+{
+    "ros.distro": "jazzy",
+    "python.analysis.extraPaths": [
+        "/opt/ros/jazzy/lib/python3.12/site-packages"
+    ],
+    "cmake.configureOnOpen": false,
+    "editor.formatOnSave": true,
+    "[python]": {
+        "editor.defaultFormatter": "ms-python.black-formatter",
+        "editor.formatOnSave": true
+    },
+    "files.associations": {
+        "*.launch.py": "python",
+        "*.xacro": "xml",
+        "*.urdf": "xml",
+        "*.sdf": "xml"
+    },
+    "search.exclude": {
+        "**/build": true,
+        "**/install": true,
+        "**/log": true
+    }
+}

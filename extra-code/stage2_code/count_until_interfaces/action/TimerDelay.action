@@ -1,0 +1,10 @@
+# Goal
+float32 wait_seconds        # 需要等待的总秒数
+---
+# Result
+float32 elapsed_seconds     # 实际经过的秒数
+bool completed              # 是否完整等待完成（取消则为 false）
+---
+# Feedback
+float32 elapsed_seconds     # 当前已等待的秒数
+float32 remaining_seconds   # 剩余等待秒数

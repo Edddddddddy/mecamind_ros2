@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<!--
+  文件说明：my_robot 机器人的 xacro 顶层入口文件。
+  演示概念：xacro:include 模块化拆分——把尺寸参数、材质、
+  macro 定义和各部件分放到 my_robot/ 目录的子文件中。
+  手动展开成 URDF：xacro my_robot.urdf.xacro > /tmp/my_robot.urdf
+  可视化：ros2 launch my_robot_description display.launch.py
+  注意 xmlns:xacro 命名空间声明是使用 xacro 标签的前提。
+-->
+<robot name="my_robot" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- include 的顺序很重要：property 和 macro 必须先定义后使用，
+       所以参数、材质、macro 文件排在前面，部件文件排在后面 -->
+  <xacro:include filename="my_robot/properties.xacro"/>
+  <xacro:include filename="my_robot/materials.xacro"/>
+  <xacro:include filename="my_robot/inertia_macros.xacro"/>
+  <xacro:include filename="my_robot/macros.xacro"/>
+  <xacro:include filename="my_robot/base.xacro"/>
+  <xacro:include filename="my_robot/sensors.xacro"/>
+  <xacro:include filename="my_robot/wheels.xacro"/>
+  <xacro:include filename="my_robot/gazebo_materials.xacro"/>
+
+</robot>

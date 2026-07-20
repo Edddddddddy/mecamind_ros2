@@ -1,0 +1,6 @@
+<launch>
+    <node pkg="turtlesim" exec="turtlesim_node" name="turtlesim"/>
+    <node pkg="turtlesim" exec="turtle_teleop_key" name="teleop" output="screen"
+          emulate_tty="true"
+          launch-prefix="bash -lc 'exec &lt;/dev/tty; exec &quot;$@&quot;' bash"/>
+</launch>

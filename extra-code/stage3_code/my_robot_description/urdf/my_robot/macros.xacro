@@ -1,0 +1,83 @@
+<?xml version="1.0"?>
+<!--
+  文件说明：车轮部件的 xacro macro 定义（只定义、不实例化）。
+  演示概念：macro 参数化复用——同一个模板通过不同参数
+  生成左轮/右轮/万向轮，实际调用在 wheels.xacro 中。
+  ${prefix} 拼进 link/joint 名字，y_reflect 取 1/-1 做左右镜像。
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- 驱动轮 macro：展开成一个轮子 link + continuous joint。
+       prefix 决定命名（left/right），y_reflect 决定装在哪一侧 -->
+  <xacro:macro name="drive_wheel" params="prefix y_reflect">
+    <link name="${prefix}_wheel_link">
+      <inertial>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <mass value="${wheel_mass}"/>
+        <xacro:inertia_cylinder_y
+          mass="${wheel_mass}"
+          radius="${wheel_radius}"
+          length="${wheel_width}"/>
+      </inertial>
+      <!-- roll 转 90°（${pi/2}）让圆柱侧躺，轴向变为 y 轴 -->
+      <visual>
+        <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+        <geometry>
+          <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
+        </geometry>
+        <material name="black"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+        <geometry>
+          <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
+        </geometry>
+      </collision>
+    </link>
+
+    <!-- y_reflect * wheel_ygap：+1 得左轮、-1 得右轮，
+         一个 macro 就覆盖了左右两侧 -->
+    <joint name="${prefix}_wheel_joint" type="continuous">
+      <parent link="base_link"/>
+      <child link="${prefix}_wheel_link"/>
+      <origin xyz="0 ${y_reflect * wheel_ygap} 0" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+    </joint>
+  </xacro:macro>
+
+  <!-- 万向轮 macro：用小球近似，fixed joint 固定在底盘下方，
+       实际的"万向"效果靠仿真中把摩擦系数调低来实现 -->
+  <xacro:macro name="caster_wheel" params="prefix x_pos z_pos">
+    <link name="${prefix}_caster_link">
+      <inertial>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <mass value="${caster_mass}"/>
+        <!-- 万向轮很小很轻，直接给一个极小的惯性值即可 -->
+        <inertia
+          ixx="1e-5" ixy="0" ixz="0"
+          iyy="1e-5" iyz="0"
+          izz="1e-5"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <sphere radius="${caster_radius}"/>
+        </geometry>
+        <material name="black"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <sphere radius="${caster_radius}"/>
+        </geometry>
+      </collision>
+    </link>
+
+    <joint name="${prefix}_caster_joint" type="fixed">
+      <parent link="base_link"/>
+      <child link="${prefix}_caster_link"/>
+      <origin xyz="${x_pos} 0 ${z_pos}" rpy="0 0 0"/>
+    </joint>
+  </xacro:macro>
+
+</robot>

@@ -1,0 +1,49 @@
+<?xml version="1.0"?>
+<!--
+  文件说明：my_robot 的底盘部分（base_footprint + base_link）。
+  所有尺寸来自 properties.xacro 的 property，
+  惯性矩阵通过 inertia_macros.xacro 的 macro 展开。
+  由 my_robot.urdf.xacro include，不能单独用 xacro 展开。
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- base_footprint：无几何体的虚拟 link，代表机器人在
+       地面上的投影原点（REP-120 导航惯例） -->
+  <link name="base_footprint"/>
+
+  <!-- 底盘 link：inertial + visual + collision 三件套。
+       visual 给 RViz 看，collision 给物理引擎算碰撞，
+       inertial 给物理引擎算动力学 -->
+  <link name="base_link">
+    <inertial>
+      <origin xyz="0 0 ${base_height / 2.0}" rpy="0 0 0"/>
+      <mass value="${base_mass}"/>
+      <xacro:inertia_box
+        mass="${base_mass}"
+        x="${base_length}"
+        y="${base_width}"
+        z="${base_height}"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 ${base_height / 2.0}" rpy="0 0 0"/>
+      <geometry>
+        <box size="${base_length} ${base_width} ${base_height}"/>
+      </geometry>
+      <material name="blue"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 ${base_height / 2.0}" rpy="0 0 0"/>
+      <geometry>
+        <box size="${base_length} ${base_width} ${base_height}"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- 底盘抬高一个轮子半径，使轮子底部正好接触地面 -->
+  <joint name="base_joint" type="fixed">
+    <parent link="base_footprint"/>
+    <child link="base_link"/>
+    <origin xyz="0 0 ${wheel_radius}" rpy="0 0 0"/>
+  </joint>
+
+</robot>

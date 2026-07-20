@@ -1,0 +1,52 @@
+<?xml version="1.0"?>
+<!--
+  文件说明：first_box.urdf 的进阶版——底盘 + 传感器立柱。
+  演示概念：material 颜色复用、fixed joint 把两个 link 连成树。
+  注意：这是手写 URDF 教学示例；完整机器人请看
+  my_robot.urdf.xacro（模块化 xacro 版本）。
+  查看方式：
+    ros2 launch my_robot_description minimal_display.launch.py \
+      model:=my_robot.urdf
+-->
+<robot name="my_first_robot">
+
+  <!-- 定义颜色材质，供下面的 visual 按名字引用 -->
+  <material name="blue">
+    <color rgba="0.0 0.0 0.8 1.0"/>
+  </material>
+
+  <material name="grey">
+    <color rgba="0.5 0.5 0.5 1.0"/>
+  </material>
+
+  <!-- 底盘：盒子中心上移 0.1 m（半个高度），底面贴地 -->
+  <link name="base_link">
+    <visual>
+      <origin xyz="0 0 0.1" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.6 0.4 0.2"/>
+      </geometry>
+      <material name="blue"/>
+    </visual>
+  </link>
+
+  <!-- 立柱：origin 上移半个柱长，使柱底与 link 原点对齐 -->
+  <link name="sensor_mast">
+    <visual>
+      <origin xyz="0 0 0.15" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.03" length="0.3"/>
+      </geometry>
+      <material name="grey"/>
+    </visual>
+  </link>
+
+  <!-- fixed joint：立柱固定在底盘顶面（z=0.2 即盒子顶部） -->
+  <joint name="base_to_mast" type="fixed">
+    <parent link="base_link"/>
+    <child link="sensor_mast"/>
+    <origin xyz="0 0 0.2" rpy="0 0 0"/>
+  </joint>
+
+</robot>
+

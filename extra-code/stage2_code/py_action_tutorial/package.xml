@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>py_action_tutorial</name>
+  <version>0.0.0</version>
+  <description>Python action server and client examples.</description>
+  <maintainer email="student@example.com">student</maintainer>
+  <license>Apache-2.0</license>
+  <depend>rclpy</depend>
+  <depend>action_msgs</depend>
+  <depend>count_until_interfaces</depend>
+  <depend>geometry_msgs</depend>
+  <depend>turtlesim</depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

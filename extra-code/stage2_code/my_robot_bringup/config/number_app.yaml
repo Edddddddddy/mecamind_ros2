@@ -1,0 +1,9 @@
+/param_publisher:
+  ros__parameters:
+    frequency: 1.5
+    message: "Python YAML configured"
+
+/cpp_param_publisher:
+  ros__parameters:
+    frequency: 1.0
+    message: "C++ YAML configured"

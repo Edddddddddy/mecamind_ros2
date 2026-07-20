@@ -1,0 +1,4 @@
+<launch>
+    <node pkg="py_pubsub" exec="publisher_node" name="stage2_publisher" />
+    <node pkg="py_pubsub" exec="subscriber_node" name="stage2_subscriber" />
+</launch>

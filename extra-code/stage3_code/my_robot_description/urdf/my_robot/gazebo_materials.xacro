@@ -1,0 +1,67 @@
+<?xml version="1.0"?>
+<!--
+  文件说明：Gazebo 专用的外观与物理属性。
+  URDF 的 <material> 只对 RViz 有效，Gazebo 需要用
+  <gazebo reference="link名"> 单独指定颜色和摩擦等参数。
+  ambient/diffuse/specular 是环境光/漫反射/高光颜色；
+  颜色值复用 materials.xacro 里的 property。
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <gazebo reference="base_link">
+    <material>
+      <ambient>${color_blue}</ambient>
+      <diffuse>${color_blue}</diffuse>
+      <specular>0.1 0.1 0.1 1.0</specular>
+    </material>
+  </gazebo>
+
+  <!-- 驱动轮物理参数：mu1/mu2 是两个方向的摩擦系数，
+       取 1.0 保证轮子抓地不打滑；kp/kd 是接触刚度/阻尼 -->
+  <gazebo reference="left_wheel_link">
+    <mu1>1.0</mu1>
+    <mu2>1.0</mu2>
+    <kp>1000000.0</kp>
+    <kd>100.0</kd>
+    <material>
+      <ambient>${color_black}</ambient>
+      <diffuse>${color_black}</diffuse>
+      <specular>0.05 0.05 0.05 1.0</specular>
+    </material>
+  </gazebo>
+
+  <gazebo reference="right_wheel_link">
+    <mu1>1.0</mu1>
+    <mu2>1.0</mu2>
+    <kp>1000000.0</kp>
+    <kd>100.0</kd>
+    <material>
+      <ambient>${color_black}</ambient>
+      <diffuse>${color_black}</diffuse>
+      <specular>0.05 0.05 0.05 1.0</specular>
+    </material>
+  </gazebo>
+
+  <gazebo reference="base_scan">
+    <material>
+      <ambient>${color_dark_grey}</ambient>
+      <diffuse>${color_dark_grey}</diffuse>
+      <specular>0.3 0.3 0.3 1.0</specular>
+    </material>
+  </gazebo>
+
+  <!-- 万向轮摩擦系数调低（0.2），让小球能在地面滑动，
+       模拟真实万向轮的效果 -->
+  <gazebo reference="back_caster_link">
+    <mu1>0.2</mu1>
+    <mu2>0.2</mu2>
+    <kp>1000000.0</kp>
+    <kd>100.0</kd>
+    <material>
+      <ambient>${color_black}</ambient>
+      <diffuse>${color_black}</diffuse>
+      <specular>0.05 0.05 0.05 1.0</specular>
+    </material>
+  </gazebo>
+
+</robot>

@@ -1,0 +1,168 @@
+<?xml version="1.0"?>
+<!--
+  文件说明：xacro property/macro 练习——单文件差速小车。
+  演示概念：xacro:property 定义常量、${} 表达式做数学运算、
+  xacro:macro 复用惯性矩阵、左右轮靠正负号镜像。
+  展开检查：xacro exercise_properties.urdf.xacro | check_urdf -
+  可视化：ros2 launch my_robot_description minimal_display.launch.py
+          model:=exercise_properties.urdf.xacro
+-->
+<robot name="exercise_robot" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- property：给尺寸起名字，之后用 ${名字} 引用。
+       改一处数值即可全局生效，避免手写 URDF 时到处改数 -->
+  <xacro:property name="chassis_length" value="0.178"/>
+  <xacro:property name="chassis_width" value="0.138"/>
+  <xacro:property name="chassis_height" value="0.109"/>
+  <xacro:property name="chassis_mass" value="0.826"/>
+
+  <xacro:property name="wheel_radius" value="0.033"/>
+  <xacro:property name="wheel_width" value="0.018"/>
+  <xacro:property name="wheel_mass" value="0.0285"/>
+  <xacro:property name="wheel_offset_y" value="0.080"/>
+  <!-- property 可以引用其他 property：底盘抬高量 = 轮子半径 -->
+  <xacro:property name="wheel_offset_z" value="${wheel_radius}"/>
+
+  <xacro:property name="color_blue" value="0.0 0.0 0.8 1.0"/>
+  <xacro:property name="color_black" value="0.0 0.0 0.0 1.0"/>
+
+  <!-- macro：带参数的模板，用 <xacro:inertia_box .../> 调用时
+       会展开成 <inertia> 标签。惯性矩阵描述刚体的转动惯量，
+       Gazebo 物理仿真必需；数值错误会导致机器人抖动或翻倒。
+       下面是实心长方体的标准惯性公式 I = m/12 * (边长平方和) -->
+  <xacro:macro name="inertia_box" params="mass x y z">
+    <inertia
+      ixx="${mass / 12.0 * (y*y + z*z)}"
+      ixy="0" ixz="0"
+      iyy="${mass / 12.0 * (x*x + z*z)}"
+      iyz="0"
+      izz="${mass / 12.0 * (x*x + y*y)}"/>
+  </xacro:macro>
+
+  <!-- 实心圆柱（轴向为 y，对应侧躺的车轮）的惯性公式：
+       绕自转轴 iyy = m*r^2/2，其余两轴对称 -->
+  <xacro:macro name="inertia_cylinder_y" params="mass radius length">
+    <inertia
+      ixx="${mass / 12.0 * (3.0*radius*radius + length*length)}"
+      ixy="0" ixz="0"
+      iyy="${mass / 2.0 * radius*radius}"
+      iyz="0"
+      izz="${mass / 12.0 * (3.0*radius*radius + length*length)}"/>
+  </xacro:macro>
+
+  <!-- 材质颜色也从 property 取值，展开后变成具体 rgba 数字 -->
+  <material name="blue">
+    <color rgba="${color_blue}"/>
+  </material>
+
+  <material name="black">
+    <color rgba="${color_black}"/>
+  </material>
+
+  <!-- base_footprint：无几何体的虚拟 link，表示机器人在
+       地面上的投影点，是导航常用的规范（REP-120） -->
+  <link name="base_footprint"/>
+
+  <!-- 底盘 link：inertial（质量/惯性）+ visual（外观）
+       + collision（碰撞体），仿真用的完整三件套 -->
+  <link name="base_link">
+    <inertial>
+      <origin xyz="0 0 ${chassis_height / 2.0}" rpy="0 0 0"/>
+      <mass value="${chassis_mass}"/>
+      <xacro:inertia_box
+        mass="${chassis_mass}"
+        x="${chassis_length}"
+        y="${chassis_width}"
+        z="${chassis_height}"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 ${chassis_height / 2.0}" rpy="0 0 0"/>
+      <geometry>
+        <box size="${chassis_length} ${chassis_width} ${chassis_height}"/>
+      </geometry>
+      <material name="blue"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 ${chassis_height / 2.0}" rpy="0 0 0"/>
+      <geometry>
+        <box size="${chassis_length} ${chassis_width} ${chassis_height}"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- 底盘抬离地面一个轮子半径，让轮子正好触地 -->
+  <joint name="base_joint" type="fixed">
+    <parent link="base_footprint"/>
+    <child link="base_link"/>
+    <origin xyz="0 0 ${wheel_offset_z}" rpy="0 0 0"/>
+  </joint>
+
+  <!-- 左轮：${pi/2} 让圆柱侧躺（xacro 内置常量 pi），
+       轴向变为 y 轴以匹配车轮的旋转方向 -->
+  <link name="left_wheel_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="${wheel_mass}"/>
+      <xacro:inertia_cylinder_y
+        mass="${wheel_mass}"
+        radius="${wheel_radius}"
+        length="${wheel_width}"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+      <geometry>
+        <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+      <geometry>
+        <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- continuous 关节：车轮可绕 y 轴无限旋转 -->
+  <joint name="left_wheel_joint" type="continuous">
+    <parent link="base_link"/>
+    <child link="left_wheel_link"/>
+    <origin xyz="0 ${wheel_offset_y} 0" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+  </joint>
+
+  <!-- 右轮与左轮完全相同，仅 joint 的 y 偏移取负号镜像；
+       （对比：macros.xacro 用 macro + y_reflect 参数消除重复） -->
+  <link name="right_wheel_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="${wheel_mass}"/>
+      <xacro:inertia_cylinder_y
+        mass="${wheel_mass}"
+        radius="${wheel_radius}"
+        length="${wheel_width}"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+      <geometry>
+        <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+      <geometry>
+        <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- ${-wheel_offset_y}：表达式里直接取负号实现左右对称 -->
+  <joint name="right_wheel_joint" type="continuous">
+    <parent link="base_link"/>
+    <child link="right_wheel_link"/>
+    <origin xyz="0 ${-wheel_offset_y} 0" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+  </joint>
+
+</robot>

@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<!--
+  文件说明：实例化 my_robot 的三个轮子。
+  macro 定义在 macros.xacro，这里只负责"调用"：
+  每一行 <xacro:drive_wheel .../> 都会展开成
+  一个完整的轮子 link + joint。
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- 同一个 macro，靠 y_reflect 的正负生成左轮和右轮 -->
+  <xacro:drive_wheel prefix="left" y_reflect="1"/>
+  <xacro:drive_wheel prefix="right" y_reflect="-1"/>
+  <!-- 后万向轮，位置参数来自 properties.xacro -->
+  <xacro:caster_wheel prefix="back" x_pos="${caster_x}" z_pos="${caster_z}"/>
+
+</robot>

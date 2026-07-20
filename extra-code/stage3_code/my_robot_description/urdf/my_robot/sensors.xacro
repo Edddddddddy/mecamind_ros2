@@ -1,0 +1,43 @@
+<?xml version="1.0"?>
+<!--
+  文件说明：my_robot 的传感器部分——顶部激光雷达（LiDAR）。
+  link 命名为 base_scan 遵循 TurtleBot3 惯例，
+  之后 SLAM/导航发布的激光数据 frame_id 就是它。
+  由 my_robot.urdf.xacro include。
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- 雷达本体：小圆柱，惯性用 z 轴圆柱 macro（竖放） -->
+  <link name="base_scan">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="${scan_mass}"/>
+      <xacro:inertia_cylinder_z
+        mass="${scan_mass}"
+        radius="${scan_radius}"
+        length="${scan_height}"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="${scan_radius}" length="${scan_height}"/>
+      </geometry>
+      <material name="dark_grey"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="${scan_radius}" length="${scan_height}"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- 雷达固定在底盘顶面正中央（scan_z 在 properties 中
+       用表达式算出：底盘高度 + 雷达半高） -->
+  <joint name="scan_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="base_scan"/>
+    <origin xyz="0 0 ${scan_z}" rpy="0 0 0"/>
+  </joint>
+
+</robot>

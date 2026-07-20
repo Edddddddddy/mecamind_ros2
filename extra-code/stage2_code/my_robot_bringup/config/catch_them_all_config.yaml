@@ -1,0 +1,13 @@
+/turtle_controller:
+  ros__parameters:
+    catch_closest_turtle_first: True
+
+/turtle_spawner:
+  ros__parameters:
+    turtle_name_prefix: "my_turtle"
+    spawn_frequency: 1.5
+    max_alive_turtles: 8
+
+/move_to_position_server:
+  ros__parameters:
+    max_speed: 2.0
