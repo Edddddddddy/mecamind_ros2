@@ -1,6 +1,12 @@
 # Stage 1 代码与 LAB 材料
 
-本目录提供 **1.3 LAB** 与 **1.5 LAB** 的参考实现，可直接复制到工作空间或按路径加载。
+本目录提供 **1.3 LAB** 与 **1.5 LAB** 的参考实现，可直接复制到工作空间或按路径加载。所有源码已添加面向初学者的中文注释。
+
+下面所有命令中的 `REPO` 请先设置为本仓库的实际路径：
+
+```bash
+REPO=/mnt/f/ros2_ai   # 改成你的课程仓库实际路径（如克隆在 WSL 内则形如 ~/ros2_ai）
+```
 
 ## 目录结构
 
@@ -38,7 +44,7 @@ stage1_code/
 将包复制到工作空间后构建（路径按你的 clone 位置调整）：
 
 ```bash
-cp -r /path/to/ros2/stage1_code/hello_ros2 ~/ros2_ws/src/
+cp -r "$REPO"/stage1_code/hello_ros2 ~/ros2_ws/src/
 
 cd ~/ros2_ws
 source /opt/ros/jazzy/setup.bash
@@ -58,22 +64,22 @@ source /opt/ros/jazzy/setup.bash
 export TURTLEBOT3_MODEL=burger
 # 终端 1：ros2 launch turtlebot3_gazebo turtlebot3_world.launch.py
 
-# 终端 2：加载课程仓库预设（将 REPO 改为本仓库实际路径）
-ros2 run rviz2 rviz2 -d REPO/stage1_code/config/turtlebot3_basic.rviz
+# 终端 2：加载课程仓库预设
+ros2 run rviz2 rviz2 -d "$REPO"/stage1_code/config/turtlebot3_basic.rviz
 ```
 
 也可复制到工作空间备用：
 
 ```bash
-cp REPO/stage1_code/config/turtlebot3_basic.rviz ~/ros2_ws/turtlebot3.rviz
+cp "$REPO"/stage1_code/config/turtlebot3_basic.rviz ~/ros2_ws/turtlebot3.rviz
 ros2 run rviz2 rviz2 -d ~/ros2_ws/turtlebot3.rviz
 ```
 
 ## 环境诊断
 
 ```bash
-bash /path/to/ros2/stage1_code/scripts/check_env.sh
+bash "$REPO"/stage1_code/scripts/check_env.sh
 
 # 工作空间不是 ~/ros2_ws 时，可显式传入路径
-bash /path/to/ros2/stage1_code/scripts/check_env.sh /path/to/your_ws
+bash "$REPO"/stage1_code/scripts/check_env.sh /path/to/your_ws
 ```
