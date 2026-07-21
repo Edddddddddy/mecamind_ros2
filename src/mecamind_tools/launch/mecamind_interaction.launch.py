@@ -1,3 +1,9 @@
+"""感知-交互链路的启动文件（视觉跟随演示，进阶课内容）。
+
+启动 假目标检测发布器 -> 感知过滤器 -> 视觉跟随控制器 的数据链，
+用于在没有真实相机/检测模型时演示"检测->过滤->控制"的完整闭环。
+"""
+
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument

@@ -1,3 +1,9 @@
+"""Nav2 导航入口（仅轻量仿真后端，历史版本）。
+
+功能与 mecamind_bringup/navigation.launch.py 类似但不支持 Gazebo。
+课堂请优先用 bringup 的统一入口；本文件保留用于轻量后端独立调试。
+"""
+
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, TimerAction

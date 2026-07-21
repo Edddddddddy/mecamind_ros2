@@ -1,3 +1,10 @@
+"""综合演示入口（轻量仿真 + 导航 + RViz，使用预存地图）。
+
+历史工具入口：组合包含 mecamind_navigation.launch.py 并默认加载
+包内自带的演示地图。课堂主路径请优先使用
+mecamind_bringup 下的统一入口（mapping/navigation.launch.py）。
+"""
+
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription

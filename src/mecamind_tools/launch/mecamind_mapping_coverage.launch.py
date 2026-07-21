@@ -1,3 +1,11 @@
+"""全自动探索建图入口（轻量仿真 + SLAM + 自动探索，进阶内容）。
+
+与半自动的"按预设路线开车"不同，这里由 mecamind_auto_explore
+根据激光与地图自主决定往哪儿开（frontier 探索），
+无需人工路线即可覆盖整个环境。课堂主路径是
+mecamind_bringup/mapping.launch.py，本文件供探索算法实验用。
+"""
+
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, TimerAction

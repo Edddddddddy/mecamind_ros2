@@ -1,3 +1,5 @@
+"""全自动探索建图的带界面版本：包含 coverage 版并强制打开 RViz。"""
+
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription

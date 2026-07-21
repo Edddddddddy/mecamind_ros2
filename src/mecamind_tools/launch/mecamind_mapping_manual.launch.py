@@ -1,3 +1,10 @@
+"""手动遥控建图入口（仅轻量仿真后端，历史版本）。
+
+拉起 轻量仿真 + SLAM + 安全门，由学员用键盘遥控开车建图。
+功能与 mecamind_bringup/mapping.launch.py（默认手动模式）相同，
+但不支持 Gazebo 后端，保留用于轻量后端独立调试。
+"""
+
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, TimerAction

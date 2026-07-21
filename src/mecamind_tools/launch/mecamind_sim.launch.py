@@ -1,3 +1,10 @@
+"""轻量仿真 + 任务编排的组合入口（第一课早期演示用）。
+
+启动轻量仿真器和任务简报/调度等编排节点，用 mode/mission
+参数选择运行模式。后续课程的建图/导航请使用
+mecamind_bringup 下的统一入口。
+"""
+
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument

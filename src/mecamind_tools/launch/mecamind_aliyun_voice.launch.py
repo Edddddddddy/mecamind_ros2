@@ -1,3 +1,10 @@
+"""语音交互链路的启动文件（阿里云 ASR/TTS，进阶课内容）。
+
+启动录音、语音识别（ASR）、语音合成（TTS）等节点，
+api_key 通过环境变量传入（默认 DASHSCOPE_API_KEY），
+避免把密钥写进代码或配置文件。
+"""
+
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition

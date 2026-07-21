@@ -1,3 +1,13 @@
+"""mecamind_tools 包的安装脚本（ROS 2 Python 包用 setuptools 打包）。
+
+【初学者阅读提示】
+- data_files：把 launch/config/maps/rviz/worlds 等资源装进
+  install/<pkg>/share/<pkg>/，运行时由 get_package_share_directory 找到；
+- entry_points.console_scripts：把 "命令名 = 模块:函数" 注册成
+  可执行入口，`ros2 run mecamind_tools <命令名>` 就是靠这张表；
+- 改了本文件或新增资源后，必须重新 `colcon build` 才会生效。
+"""
+
 from glob import glob
 import os
 
@@ -5,6 +15,7 @@ from setuptools import find_packages, setup
 
 
 package_name = "mecamind_tools"
+# 排除 *.local.yaml：本地私密配置（如阿里云密钥）不随包安装/提交
 public_config_files = [
     path for path in glob("config/*.yaml") if not path.endswith(".local.yaml")
 ]
@@ -30,6 +41,7 @@ setup(
     license="Apache-2.0",
     tests_require=["pytest"],
     entry_points={
+        # ros2 run mecamind_tools <左边的名字> 会调用右边 模块:函数
         "console_scripts": [
             "mission_brief_node = mecamind_tools.mission_brief_node:main",
             "mecamind_lifecycle_activator = mecamind_tools.lifecycle_activator:main",
@@ -45,6 +57,7 @@ setup(
             "mecamind_vision_follow_controller = mecamind_tools.vision_follow_controller:main",
             "mecamind_fake_detection_publisher = mecamind_tools.fake_detection_publisher:main",
             "mecamind_mission_executor = mecamind_tools.mission_executor:main",
+            "mecamind_nav_acceptance = mecamind_tools.nav_acceptance:main",
             "mecamind_task_scheduler = mecamind_tools.task_scheduler:main",
             "mecamind_boundary_revisit_planner = mecamind_tools.boundary_revisit_planner:main",
             "mecamind_map_asset_manager = mecamind_tools.map_asset_manager:main",

@@ -1,11 +1,25 @@
 <?xml version="1.0"?>
+<!--
+  三室户教学世界（Gazebo 版）。
+
+  【布局】7.8m x 5.9m 的外墙围出一套房，两道隔断墙把室内分成
+  客厅（左上）、卧室（右上）、下方门厅/走廊三块区域，另摆了
+  桌子、柜子、方柱三件家具当建图/避障障碍物。
+  【一致性要求】墙体/家具坐标必须与轻量仿真的
+  mecamind_tools/worlds/three_room_house.world 和
+  world_geometry.py 保持一致，两个后端才会"看到"同一个环境，
+  地图质量分析工具也是按这份几何来验收四面墙的。
+-->
 <sdf version="1.9">
   <world name="three_room_house">
+    <!-- 物理步长 1ms；real_time_factor 目标 1.0（WSL2 上实际常跑不满） -->
     <physics name="default_physics" type="ignored">
       <max_step_size>0.001</max_step_size>
       <real_time_factor>1.0</real_time_factor>
     </physics>
 
+    <!-- Gazebo 世界必备的系统插件：物理引擎、用户命令、场景广播（GUI
+         要靠它看到画面）、传感器渲染（激光/相机）、IMU 仿真 -->
     <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
     <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
     <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
@@ -39,6 +53,10 @@
       </link>
     </model>
 
+    <!-- 房屋本体：static=true 表示不参与动力学（不会被撞动），
+         所有墙和家具都挂在同一个 link 下，每件东西一对
+         collision（物理碰撞体）+ visual（外观）。
+         墙高 0.8m、厚 0.12m，激光安装高度 0.19m 能稳定扫到。 -->
     <model name="three_room_house">
       <static>true</static>
       <link name="walls">
@@ -63,6 +81,8 @@
       </link>
     </model>
 
+    <!-- 引入机器人模型（在 GZ_SIM_RESOURCE_PATH 指向的 models/ 目录
+         下查找），出生位姿写在模型自己的 <pose> 里（地图原点） -->
     <include>
       <uri>model://mecamind_mecanum</uri>
     </include>

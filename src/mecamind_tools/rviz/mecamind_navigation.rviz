@@ -86,7 +86,7 @@ Visualization Manager:
         Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Best Effort
-        Value: /scan_raw
+        Value: /scan
       Use Fixed Frame: true
       Use rainbow: true
       Value: true
@@ -138,13 +138,13 @@ Visualization Manager:
       Value: true
     - Alpha: 1
       Class: rviz_default_plugins/Path
-      Color: 255; 0; 0
+      Color: 255; 40; 40
       Enabled: true
       Head Diameter: 0.04
       Head Length: 0.04
       Length: 0.3
-      Line Style: Lines
-      Line Width: 0.03
+      Line Style: Billboards
+      Line Width: 0.08
       Name: Path
       Offset:
         X: 0
@@ -249,16 +249,19 @@ Visualization Manager:
   Value: true
   Views:
     Current:
-      Class: rviz_default_plugins/Orbit
-      Distance: 8
-      Focal Point:
-        X: 0
-        Y: 0
-        Z: 0
+      Angle: 0
+      Class: rviz_default_plugins/TopDownOrtho
+      Enable Stereo Rendering:
+        Stereo Eye Swap: false
+        Stereo Focal Distance: 1
+        Swap Stereo Eyes: false
+        Value: false
       Invert Z Axis: false
       Name: Current View
-      Pitch: 0.785398
+      Near Clip Distance: 0.01
+      Scale: 90
       Target Frame: <Fixed Frame>
-      Value: Orbit (rviz)
-      Yaw: 0.785398
+      Value: TopDownOrtho (rviz_default_plugins)
+      X: 0
+      Y: 0
     Saved: ~

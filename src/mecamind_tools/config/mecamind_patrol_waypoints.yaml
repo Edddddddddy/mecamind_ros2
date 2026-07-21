@@ -1,11 +1,19 @@
+# 多点巡航路线（第三课，mission_executor 的 patrol 意图使用）。
+#
+# 收到 {"intent":"patrol"} 后，机器人按 waypoints 顺序逐点导航，
+# 循环 loop_count 圈。坐标均为 map 坐标系（米/弧度）。
+
+# 初始位姿与两个后端统一的出生点 (0,0,0) 一致（地图从原点建起）
 initial_pose:
   frame_id: map
-  x: -3.2
-  y: -2.4
+  x: 0.0
+  y: 0.0
   yaw: 0.0
 
 loop_count: 1
+# 单个路点的到达超时（仿真时间秒），超时放弃该点继续下一个
 goal_timeout_sec: 120.0
+# 每个路点之间停留 1.5 秒（模拟巡逻观察）
 wait_between_goals_sec: 1.5
 
 waypoints:

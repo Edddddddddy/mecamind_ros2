@@ -1,3 +1,29 @@
+"""语音链路相关的 ROS 2 节点：麦克风录音、阿里云 ASR、阿里云 TTS。
+
+本文件把 aliyun_clients.py 里的"纯云服务客户端"接入 ROS 话题系统，
+组成完整的语音交互管线（"按键说话"模式）：
+
+    [用户调用 /mecamind/record_voice 服务]
+        -> MicrophoneRecorderNode 录一段 WAV，路径发布到 /mecamind/audio_file
+        -> AliyunAsrFileNode 订阅音频路径，调阿里云 ASR，识别文字发布到
+           /mecamind/voice_command（给任务调度器）和 /mecamind/asr_result（调试用）
+        -> task_scheduler.py 解析出任务，把回复语发布到 /mecamind/robot_reply
+        -> AliyunTtsNode 订阅回复语，合成语音文件，路径发布到 /mecamind/tts_audio_file
+        -> （由播放节点或用户播放该音频）
+
+三个节点各司其职、只通过 topic 通信，体现了 ROS "小节点 + 消息解耦" 的设计
+哲学：任何一环都可以单独替换（例如把假麦克风换成真麦克风、把阿里云换成本地
+模型）而不影响其他环节。
+
+文件前半部分是不依赖 ROS 的纯函数（payload 解析、录音后端选择、录音命令
+拼装、执行录音），方便单元测试；后半部分是三个 Node 类和它们的 main 入口。
+
+初学者重点阅读：
+1. select_microphone_backend —— 如何在 arecord / ffmpeg 之间自动选择录音工具；
+2. MicrophoneRecorderNode._record_cb —— 一个典型的 ROS service 回调写法；
+3. AliyunAsrFileNode._audio_cb —— "订阅 -> 调外部服务 -> 发布" 的桥接节点范式。
+"""
+
 from __future__ import annotations
 
 import json
@@ -17,10 +43,17 @@ from .aliyun_clients import AliyunSpeechClient
 
 
 def parse_audio_file_payload(payload: str) -> str:
+    """从 topic 消息中解析出音频文件路径，兼容两种消息格式。
+
+    上游可能直接发裸路径字符串（如 "/tmp/a.wav"），也可能发 JSON
+    （如 '{"path": "/tmp/a.wav"}'）。这里统一成一个路径字符串返回，
+    解析失败时抛 ValueError 由调用方记日志——宽容输入、严格输出。
+    """
     clean = payload.strip()
     if not clean:
         raise ValueError("empty audio path payload")
     if clean.startswith("{"):
+        # JSON 格式：优先取 "path" 键，其次兼容 "audio_path" 键。
         data: Any = json.loads(clean)
         if not isinstance(data, dict):
             raise ValueError("audio path JSON payload must be an object")
@@ -35,10 +68,27 @@ def select_microphone_backend(
     environment: Mapping[str, str] | None = None,
     which: Callable[[str], str | None] = shutil.which,
 ) -> tuple[str, str]:
+    """选择录音后端，返回 (后端名, 可执行文件路径)。
+
+    支持两种录音工具：
+    - arecord（ALSA 自带）：直接读声卡，普通 Linux 桌面/开发板最常用；
+    - ffmpeg_pulse（ffmpeg 读 PulseAudio）：WSL2 等环境声卡通过 PulseAudio
+      转发（PULSE_SERVER 环境变量），只能走这条路。
+
+    requested 为 "auto" 时的自动决策顺序：
+    1. 有 PULSE_SERVER 且装了 ffmpeg -> 用 ffmpeg_pulse（典型 WSL2 场景）；
+    2. 装了 arecord -> 用 arecord；
+    3. 只装了 ffmpeg -> 退而求其次用 ffmpeg_pulse；
+    4. 都没有 -> 报错并提示安装。
+
+    参数 environment 和 which 允许在测试中注入假环境变量表和假的
+    "查找可执行文件"函数，从而不依赖真实系统状态就能测全部分支。
+    """
     normalized = requested.strip().lower()
     if normalized not in {"auto", "arecord", "ffmpeg_pulse"}:
         raise ValueError("recorder_backend must be auto, arecord, or ffmpeg_pulse")
 
+    # 用户显式指定了后端：找不到对应工具就直接报错，不做静默替换。
     if normalized == "arecord":
         executable = which("arecord")
         if not executable:
@@ -50,6 +100,7 @@ def select_microphone_backend(
             raise RuntimeError("ffmpeg not found")
         return normalized, executable
 
+    # auto 模式：按上文注释的优先级自动探测。
     env = environment if environment is not None else os.environ
     ffmpeg = which("ffmpeg")
     if env.get("PULSE_SERVER") and ffmpeg:
@@ -71,6 +122,13 @@ def build_microphone_record_command(
     sample_rate: int,
     channels: int,
 ) -> list[str]:
+    """根据后端类型拼装录音命令行（返回参数列表，供 subprocess 执行）。
+
+    两个后端的目标一致：录制指定时长、指定采样率的 16 位小端 PCM WAV
+    （S16_LE / pcm_s16le），这是阿里云 ASR 要求的格式。
+    先做参数合法性检查，把"时长为负"这类错误挡在拼命令之前，
+    避免生成一条看起来能跑、实际行为诡异的命令。
+    """
     if duration_sec <= 0.0:
         raise ValueError("duration_sec must be positive")
     if sample_rate <= 0:
@@ -82,16 +140,17 @@ def build_microphone_record_command(
     if backend == "arecord":
         command = [
             executable,
-            "-q",
+            "-q",            # 安静模式，不往终端刷进度
             "-t",
-            "wav",
+            "wav",           # 输出容器格式
             "-f",
-            "S16_LE",
+            "S16_LE",        # 采样格式：16 位有符号小端
             "-r",
             str(sample_rate),
             "-c",
             str(channels),
             "-d",
+            # arecord 的 -d 只接受整数秒，四舍五入且至少录 1 秒。
             str(max(1, int(round(duration_sec)))),
         ]
         if device:
@@ -101,22 +160,23 @@ def build_microphone_record_command(
     if backend == "ffmpeg_pulse":
         return [
             executable,
-            "-nostdin",
+            "-nostdin",      # 不读标准输入，防止 ffmpeg 在后台等待按键卡死
             "-loglevel",
-            "error",
-            "-y",
+            "error",         # 只输出错误日志，保持终端干净
+            "-y",            # 输出文件已存在时直接覆盖
             "-f",
-            "pulse",
+            "pulse",         # 输入设备类型：PulseAudio
             "-i",
             device or "default",
             "-t",
+            # ffmpeg 支持小数秒，保留 3 位（毫秒精度）。
             f"{duration_sec:.3f}",
             "-ac",
             str(channels),
             "-ar",
             str(sample_rate),
             "-c:a",
-            "pcm_s16le",
+            "pcm_s16le",     # 与 arecord 的 S16_LE 等价的编码
             path,
         ]
     raise ValueError(f"unsupported recorder backend: {backend}")
@@ -128,6 +188,16 @@ def record_microphone_clip(
     timeout_sec: float,
     runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
 ) -> Path:
+    """执行录音命令并校验产物，返回录好的 WAV 文件路径。
+
+    runner 参数同样是依赖注入：测试时传假的 subprocess.run 即可不真正录音。
+    check=True 让子进程返回非零码时直接抛 CalledProcessError；
+    timeout 防止录音工具挂死拖住整个服务回调。
+
+    录完后检查文件大小 > 44 字节：44 字节恰好是标准 WAV 文件头的长度，
+    只有文件头没有音频数据说明麦克风没采到声音（设备错误但进程正常退出
+    的情况并不少见），必须显式报错。
+    """
     path = Path(output_path).expanduser()
     path.parent.mkdir(parents=True, exist_ok=True)
     runner(
@@ -144,10 +214,21 @@ def record_microphone_clip(
 
 
 class MicrophoneRecorderNode(Node):
-    """Record a push-to-talk WAV clip and feed the existing file ASR topic."""
+    """Record a push-to-talk WAV clip and feed the existing file ASR topic.
+
+    "按键说话"录音节点：对外提供一个 Trigger 服务 /mecamind/record_voice，
+    每调用一次就录一段固定时长的音频，把文件路径发布到 /mecamind/audio_file
+    供 ASR 节点消费，同时在 /mecamind/microphone_status 上发布 JSON 状态
+    （recording / recorded / error），方便上层 UI 或调试工具展示进度。
+
+    选择"服务触发 + 固定时长"而不是持续监听，是教学上的简化：
+    不需要 VAD（语音活动检测），流程完全确定，学生容易理解和复现。
+    """
 
     def __init__(self) -> None:
         super().__init__("mecamind_microphone_recorder")
+        # 所有 topic 名、录音参数都做成 ROS parameter，
+        # 这样上课演示时不改代码、只改 launch/命令行参数就能调整行为。
         self.declare_parameter("audio_file_topic", "/mecamind/audio_file")
         self.declare_parameter("status_topic", "/mecamind/microphone_status")
         self.declare_parameter("record_service", "/mecamind/record_voice")
@@ -169,12 +250,14 @@ class MicrophoneRecorderNode(Node):
             str(self.get_parameter("record_service").value),
             self._record_cb,
         )
+        # 简单的"忙碌标志"，防止上一段还没录完又触发一次录音。
         self._recording = False
         self.get_logger().info(
             "MecaMind microphone ready; call the record_voice service and speak after recording starts"
         )
 
     def _publish_status(self, state: str, detail: str = "", path: str = "") -> None:
+        """把当前录音状态打包成 JSON 发布，供 UI/调试工具订阅展示。"""
         message = String()
         message.data = json.dumps(
             {"state": state, "detail": detail, "path": path},
@@ -187,21 +270,33 @@ class MicrophoneRecorderNode(Node):
         _request: Trigger.Request,
         response: Trigger.Response,
     ) -> Trigger.Response:
+        """record_voice 服务回调：录一段音频并把路径发到 audio_file topic。
+
+        注意：录音是同步阻塞的（会占住回调线程几秒钟），教学场景可以接受；
+        生产环境应改成异步/独立线程以免阻塞节点里其他回调。
+        Trigger 服务的约定：success 表示是否成功，message 携带
+        录音文件路径（成功时）或错误原因（失败时）。
+        """
+        # 步骤 0：拒绝并发录音。ROS 默认单线程执行器下其实不会并发进入
+        # 这个回调，但显式加锁标志让意图更清楚，也兼容多线程执行器。
         if self._recording:
             response.success = False
             response.message = "microphone recording already in progress"
             return response
 
         self._recording = True
+        # 步骤 1：用毫秒时间戳生成唯一输出文件名，避免覆盖历史录音。
         output_path = (
             Path(str(self.get_parameter("output_dir").value)).expanduser()
             / f"mecamind_mic_{int(time.time() * 1000)}.wav"
         )
         try:
+            # 步骤 2：选择录音后端（arecord 或 ffmpeg_pulse）。
             backend, executable = select_microphone_backend(
                 str(self.get_parameter("recorder_backend").value)
             )
             duration_sec = float(self.get_parameter("duration_sec").value)
+            # 步骤 3：拼装录音命令行。
             command = build_microphone_record_command(
                 backend=backend,
                 executable=executable,
@@ -211,12 +306,15 @@ class MicrophoneRecorderNode(Node):
                 sample_rate=int(self.get_parameter("sample_rate").value),
                 channels=int(self.get_parameter("channels").value),
             )
+            # 步骤 4：先广播 "recording" 状态再开录——用户听到/看到提示后开始说话。
             self._publish_status("recording", f"backend={backend}", str(output_path))
+            # 超时取"录音时长 + 5 秒余量"，且不低于 5 秒，防止工具启动慢被误杀。
             recorded_path = record_microphone_clip(
                 command,
                 output_path,
                 timeout_sec=max(5.0, duration_sec + 5.0),
             )
+            # 步骤 5：把录好的文件路径发给下游 ASR 节点。
             audio = String()
             audio.data = str(recorded_path)
             self.audio_pub.publish(audio)
@@ -224,17 +322,29 @@ class MicrophoneRecorderNode(Node):
             response.success = True
             response.message = str(recorded_path)
         except Exception as exc:  # noqa: BLE001
+            # 录音失败不能让节点崩溃：记日志、广播 error 状态、在服务响应里返回原因。
             detail = str(exc)
             self.get_logger().error(f"Microphone recording failed: {detail}")
             self._publish_status("error", detail, str(output_path))
             response.success = False
             response.message = detail
         finally:
+            # 无论成败都要复位忙碌标志，否则一次失败会永久锁死录音功能。
             self._recording = False
         return response
 
 
 class AliyunAsrFileNode(Node):
+    """ASR 桥接节点：订阅音频文件路径，调阿里云识别，发布识别文字。
+
+    典型的"胶水节点"：本身没有业务逻辑，只负责把 topic 消息翻译成
+    对 AliyunSpeechClient 的调用，再把结果发回 topic。识别文字同时
+    发到两个 topic：
+    - voice_command_topic（裸文本）：给任务调度器直接消费；
+    - asr_result_topic（JSON，带 source 字段）：给调试/记录工具，
+      保留元信息以便日后区分识别来源。
+    """
+
     def __init__(self) -> None:
         super().__init__("mecamind_aliyun_asr_file")
         self.declare_parameter("audio_file_topic", "/mecamind/audio_file")
@@ -245,6 +355,8 @@ class AliyunAsrFileNode(Node):
         self.declare_parameter("asr_model", "paraformer-realtime-v2")
         self.declare_parameter("sample_rate", 16000)
 
+        # 客户端在构造时创建一次、之后复用；API Key 的检查推迟到第一次
+        # 真正识别时才发生（见 aliyun_clients），所以没配 Key 也能启动节点。
         self.client = AliyunSpeechClient(
             api_key_env=str(self.get_parameter("api_key_env").value),
             websocket_url=str(self.get_parameter("websocket_url").value),
@@ -270,6 +382,13 @@ class AliyunAsrFileNode(Node):
         self.get_logger().info("MecaMind Aliyun ASR file bridge ready")
 
     def _audio_cb(self, msg: String) -> None:
+        """收到音频路径 -> 调云端 ASR -> 发布识别文字。
+
+        注意这里是同步网络调用，识别期间会阻塞本节点的回调队列。
+        任何失败（路径非法、网络错误、识别为空）都只记 error 日志并
+        丢弃这条消息，绝不让异常冒泡导致节点退出——语音链路里
+        "这句没听清"是正常情况，等用户重录即可。
+        """
         try:
             audio_path = parse_audio_file_payload(msg.data)
             text = self.client.recognize_file(audio_path)
@@ -277,6 +396,7 @@ class AliyunAsrFileNode(Node):
             self.get_logger().error(f"Aliyun ASR failed: {exc}")
             return
 
+        # 先发带元信息的 JSON 结果（调试用），再发裸文本指令（业务用）。
         result = String()
         result.data = json.dumps({"text": text, "source": "aliyun_asr"}, ensure_ascii=False)
         self.result_pub.publish(result)
@@ -287,6 +407,14 @@ class AliyunAsrFileNode(Node):
 
 
 class AliyunTtsNode(Node):
+    """TTS 桥接节点：订阅机器人回复文本，调阿里云合成语音，发布音频文件路径。
+
+    与 ASR 节点结构对称：订阅 /mecamind/robot_reply 上的文本，
+    合成后把音频文件路径发布到 /mecamind/tts_audio_file，由播放节点
+    （或用户手动）播放。发布"路径"而不是音频数据本身，避免在 topic 上
+    传输大块二进制。
+    """
+
     def __init__(self) -> None:
         super().__init__("mecamind_aliyun_tts")
         self.declare_parameter("input_topic", "/mecamind/robot_reply")
@@ -314,6 +442,11 @@ class AliyunTtsNode(Node):
         self.get_logger().info("MecaMind Aliyun TTS bridge ready")
 
     def _text_cb(self, msg: String) -> None:
+        """收到回复文本 -> 调云端 TTS -> 发布合成音频的文件路径。
+
+        空文本直接忽略（没必要为空串浪费一次云调用）；合成失败只记日志
+        不抛异常，保证节点常驻。
+        """
         text = msg.data.strip()
         if not text:
             return
@@ -332,6 +465,11 @@ class AliyunTtsNode(Node):
 
 
 def asr_main(args=None) -> None:
+    """ASR 节点入口（对应 setup.py 中的 console_scripts）。
+
+    标准的 rclpy 节点生命周期：init -> 建节点 -> spin 阻塞处理回调 ->
+    finally 里销毁节点并 shutdown，保证 Ctrl+C 退出时资源被正确释放。
+    """
     rclpy.init(args=args)
     node = AliyunAsrFileNode()
     try:
@@ -342,6 +480,7 @@ def asr_main(args=None) -> None:
 
 
 def microphone_main(args=None) -> None:
+    """麦克风录音节点入口。"""
     rclpy.init(args=args)
     node = MicrophoneRecorderNode()
     try:
@@ -352,6 +491,7 @@ def microphone_main(args=None) -> None:
 
 
 def tts_main(args=None) -> None:
+    """TTS 节点入口。"""
     rclpy.init(args=args)
     node = AliyunTtsNode()
     try:

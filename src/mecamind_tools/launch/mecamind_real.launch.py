@@ -1,3 +1,10 @@
+"""真机部署入口（预留）。
+
+面向未来接真实底盘/雷达的场景：不启动仿真器，假设驱动层
+已由硬件侧提供 /scan、/odom 并订阅 /cmd_vel，本文件只拉起
+上层的任务/安全/调度节点。当前课程阶段仅供参考。
+"""
+
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, TimerAction

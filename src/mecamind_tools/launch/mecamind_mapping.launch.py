@@ -1,3 +1,10 @@
+"""半自动建图入口（仅轻量仿真后端，历史版本）。
+
+功能与 mecamind_bringup/mapping.launch.py（auto_route:=true）相同，
+但不支持 Gazebo 后端。课堂请优先用 bringup 的统一入口；
+本文件保留用于轻量后端的独立调试。
+"""
+
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, EmitEvent, RegisterEventHandler, TimerAction
