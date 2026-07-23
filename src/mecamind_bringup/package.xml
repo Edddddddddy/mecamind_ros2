@@ -11,6 +11,9 @@
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>mecamind_gazebo</exec_depend>
   <exec_depend>mecamind_tools</exec_depend>
+  <exec_depend>mecamind_interfaces</exec_depend>
+  <exec_depend>mecamind_perception</exec_depend>
+  <exec_depend>rqt_image_view</exec_depend>
   <exec_depend>teleop_twist_keyboard</exec_depend>
   <exec_depend>slam_toolbox</exec_depend>
   <exec_depend>nav2_map_server</exec_depend>

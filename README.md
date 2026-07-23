@@ -144,6 +144,46 @@ MECAMIND_CP2_BACKEND=gazebo bash scripts/test_cp2.sh
 
 成功标志：`MECAMIND_CP2_OK`。跑验收前建议先 `bash scripts/cleanup_ros2.sh`，避免残留仿真抢话题。
 
+## 第三次课：Nav2 导航
+
+统一导航入口（默认 Gazebo + RViz，加载打包好的三居室地图并自动激活 Nav2）：
+
+```bash
+ros2 launch mecamind_bringup navigation.launch.py
+```
+
+轻量仿真兜底：
+
+```bash
+ros2 launch mecamind_bringup navigation.launch.py backend:=lite use_gui:=false
+```
+
+命名目标导航与多点巡航（另开终端）：
+
+```bash
+# 去客厅（支持中文别名，如 "卧室"）
+ros2 topic pub --once /mecamind/task_command std_msgs/msg/String \
+  '{data: "{\"intent\": \"navigate\", \"target\": \"living_room\"}"}'
+
+# 多点巡航 / 运动中取消
+ros2 topic pub --once /mecamind/task_command std_msgs/msg/String '{data: "{\"intent\": \"patrol\"}"}'
+ros2 topic pub --once /mecamind/task_command std_msgs/msg/String '{data: "{\"intent\": \"stop\"}"}'
+
+# 任务状态心跳
+ros2 topic echo /mecamind/mission_state
+```
+
+使用自己第二课建的地图：`navigation.launch.py map_file:=$HOME/mecamind_ros2/maps/mecamind_cp2_gazebo_map.yaml`。
+
+## CP3 验收
+
+```bash
+bash scripts/test_cp3.sh                                # 轻量后端，约 3 分钟
+MECAMIND_CP3_BACKEND=gazebo bash scripts/test_cp3.sh    # Gazebo headless，10~20 分钟
+```
+
+自动完成"启动导航栈 → 三个命名目标 → 运动中取消"全流程，成功标志：`MECAMIND_CP3_OK`，报告写入 `maps/mecamind_cp3_<backend>_nav_report.json`。
+
 ## 一键清理测试残留
 
 默认只清理本项目启动的 ROS 2 和 Gazebo 进程：

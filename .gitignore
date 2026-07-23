@@ -17,3 +17,11 @@ maps/*.png
 # 内部课程规划与 Markdown 讲义源稿，仅发布最终 PDF
 PROJECT_PLAN.md
 docs/*.md
+
+# md2pdf 本地依赖（只提交 package.json / package-lock.json / render.mjs）
+scripts/md2pdf/node_modules/
+node_modules/
+
+# 根目录误放的权重副本（正式权重在 models/，需要入库）
+/*.pt
+/*.onnx

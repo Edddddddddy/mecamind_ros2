@@ -71,20 +71,36 @@ const executablePath = `${chromeDir}/${ver}/chrome-linux64/chrome`;
 
 const browser = await puppeteer.launch({ executablePath, args: ["--no-sandbox", "--disable-gpu"] });
 const page = await browser.newPage();
-await page.setContent(html, { waitUntil: "networkidle0", timeout: 120000 });
+// Large docs embed multi‑MB images as data URLs; networkidle0 often never settles.
+await page.setContent(html, { waitUntil: "load", timeout: 180000 });
 
 // Render mermaid diagrams in-page before printing.
 const mermaidJs = readFileSync(resolve(import.meta.dirname, "node_modules/mermaid/dist/mermaid.min.js"), "utf-8");
 await page.addScriptTag({ content: mermaidJs });
-await page.evaluate(async () => {
+const mermaidReport = await page.evaluate(async () => {
   window.mermaid.initialize({
     startOnLoad: false,
     theme: "base",
     themeVariables: { fontFamily: '"Noto Sans Mono CJK SC", sans-serif', fontSize: "14px" },
     flowchart: { htmlLabels: true, curve: "linear" },
   });
-  await window.mermaid.run({ querySelector: "pre.mermaid" });
+  const nodes = [...document.querySelectorAll("pre.mermaid")];
+  const errors = [];
+  try {
+    await window.mermaid.run({ querySelector: "pre.mermaid" });
+  } catch (e) {
+    errors.push(String(e && e.message ? e.message : e));
+  }
+  const rendered = nodes.filter((n) => n.querySelector("svg")).length;
+  const failed = nodes.filter((n) => n.querySelector(".error-icon, [aria-roledescription='error'], .error") || /Syntax error/i.test(n.textContent || "")).length;
+  const bare = nodes.filter((n) => !n.querySelector("svg")).length;
+  return { total: nodes.length, rendered, failed, bare, errors };
 });
+console.log(`mermaid: ${JSON.stringify(mermaidReport)}`);
+if (mermaidReport.bare > 0 || mermaidReport.failed > 0 || mermaidReport.errors.length) {
+  console.error("ERROR: mermaid diagrams failed to render correctly");
+  process.exit(1);
+}
 await new Promise((r) => setTimeout(r, 1500));
 await page.pdf({
   path: outPdf,
