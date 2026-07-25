@@ -121,15 +121,15 @@ def generate_launch_description():
             {"use_sim_time": True},
             {"world_name": "three_room_house"},
             {"model_name": "follow_target"},
-            # 圆心(-2.2,-1.0) r≈0.75 六边形；最近点约 y=-0.25，车在 y=1.95
+            # 圆心(-2.3,-1.2) r≈1.1 六边形；比原 0.75 圈更大，仍避开小车
             {
                 "waypoints_xy": (
-                    "[-2.20,-0.25, -2.85,-0.63, -2.58,-1.65, "
-                    "-2.20,-1.75, -1.83,-1.65, -1.55,-0.63]"
+                    "[-2.30,-0.10, -3.25,-0.65, -2.85,-2.15, "
+                    "-2.30,-2.30, -1.75,-2.15, -1.35,-0.65]"
                 )
             },
             {"z": 0.38},
-            {"speed_mps": 0.10},
+            {"speed_mps": 0.12},
             {"rate_hz": 4.0},
             {"startup_delay_sec": 6.0},
             {"wait_for_follow_enable": True},
@@ -151,11 +151,11 @@ def generate_launch_description():
         output="screen",
         parameters=[
             {"output_cmd_topic": "/cmd_vel_follow"},
-            # desired_width 适中：跟近但不贴脸；过近时控制器会大力后退
-            {"desired_width": 0.28},
-            {"max_linear": 0.22},
+            # 比 0.28 再近约 1/3（画面更宽），过近仍大力后退防穿模
+            {"desired_width": 0.36},
+            {"max_linear": 0.24},
             {"max_angular": 1.0},
-            {"kp_linear": 1.1},
+            {"kp_linear": 1.15},
             {"kp_angular": 2.2},
             {"search_on_loss": True},
             {"search_angular": 0.45},

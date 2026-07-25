@@ -87,7 +87,7 @@
     <include>
       <uri>model://follow_target</uri>
       <name>follow_target</name>
-      <pose>-2.20 -0.25 0.38 0 0 0</pose>
+      <pose>-2.30 -0.10 0.38 0 0 0</pose>
     </include>
   </world>
 </sdf>

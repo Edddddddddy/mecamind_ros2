@@ -5,8 +5,8 @@
 改为车南方空地单向绕圈：始终在视野前方，且与小车保持距离。
 
 默认：
-  圆心约 (-2.2, -1.0)、半径约 0.75m 的六边形近似圆
-  小车 (-2.0, 1.95) 朝南旁观，最近点约 2.2m，不会对撞
+  圆心约 (-2.3, -1.2)、半径约 1.1m 的六边形近似圆
+  小车 (-2.0, 1.95) 朝南旁观，最近点约 2m，不对撞
 
 等 /mecamind/follow_enable=true 后再开跑，避免柱子先跑丢。
 """
@@ -76,13 +76,13 @@ class FollowTargetMover(Node):
         super().__init__("mecamind_follow_target_mover")
         self.declare_parameter("world_name", "three_room_house")
         self.declare_parameter("model_name", "follow_target")
-        # 客厅南侧空地绕圈（六边形近似，远离小车）
+        # 客厅南侧空地绕圈（更大半径，仍远离小车）
         self.declare_parameter(
             "waypoints_xy",
-            "[-2.20,-0.25, -2.85,-0.63, -2.58,-1.65, -2.20,-1.75, -1.83,-1.65, -1.55,-0.63]",
+            "[-2.30,-0.10, -3.25,-0.65, -2.85,-2.15, -2.30,-2.30, -1.75,-2.15, -1.35,-0.65]",
         )
         self.declare_parameter("z", 0.38)
-        self.declare_parameter("speed_mps", 0.10)
+        self.declare_parameter("speed_mps", 0.12)
         self.declare_parameter("rate_hz", 4.0)
         self.declare_parameter("enabled", True)
         self.declare_parameter("ping_pong", False)
@@ -107,12 +107,12 @@ class FollowTargetMover(Node):
         except ValueError as exc:
             self.get_logger().error(f"waypoints 无效，回退默认绕圈: {exc}")
             self._waypoints = [
-                (-2.20, -0.25),
-                (-2.85, -0.63),
-                (-2.58, -1.65),
-                (-2.20, -1.75),
-                (-1.83, -1.65),
-                (-1.55, -0.63),
+                (-2.30, -0.10),
+                (-3.25, -0.65),
+                (-2.85, -2.15),
+                (-2.30, -2.30),
+                (-1.75, -2.15),
+                (-1.35, -0.65),
             ]
         self._path_pts = list(self._waypoints)
         if bool(self.get_parameter("closed_loop").value):
