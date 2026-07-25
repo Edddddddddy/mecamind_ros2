@@ -86,5 +86,13 @@
     <include>
       <uri>model://mecamind_mecanum</uri>
     </include>
+
+    <!-- 第五课视觉跟随：细红柱，默认出生在客厅 L 轨迹起点；
+         mover 会把小车摆到起点后方，并驱动红柱走跨房间 L 形折线 -->
+    <include>
+      <uri>model://follow_target</uri>
+      <name>follow_target</name>
+      <pose>-2.0 1.0 0.38 0 0 0</pose>
+    </include>
   </world>
 </sdf>

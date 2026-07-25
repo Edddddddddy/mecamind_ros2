@@ -5,13 +5,14 @@
   已确认目标事件（含归一化坐标 cx 和目标宽度 width）；
 - 订阅 /mecamind/follow_enable（Bool）：跟随功能总开关，默认关闭，
   由任务调度/状态机在用户说"跟随我"之后打开；
-- 发布 /controller/cmd_vel_nav（Twist）：速度指令，送往底盘速度混控。
+- 发布 /cmd_vel_follow（Twist）：速度指令，送往第 5 课速度仲裁器
+  （再经安全门到 /cmd_vel）；勿直接抢 Nav2 的控制器入口。
 
-控制思想（比例控制 P 控制的最小示例）：
-- 转向：目标偏离画面中心多少（cx - 0.5），就按比例反向转多少，
+控制思想（教学版比例控制 P；计划书称 PID，课堂先掌握 P）：
+- 转向：目标偏离画面中心多少（cx - 0.5），就按 kp_angular 反向转，
   让目标回到画面中央；
 - 前进/后退：目标在画面里的宽度反映距离远近——目标越远看起来越小。
-  用"期望宽度 - 实际宽度"的偏差按比例给前进速度，实现"保持跟随距离"。
+  用"期望宽度 - 实际宽度"的偏差按 kp_linear 给前进速度，实现"保持跟随距离"。
 
 安全设计是本文件的重点，初学者务必理解这三层保护：
 1. 使能开关：follow_enable 不打开，收到再多目标事件也不动；
@@ -58,6 +59,8 @@ def compute_follow_command(
     center_deadband: float = 0.05,
     max_linear: float = 0.20,
     max_angular: float = 0.8,
+    kp_angular: float = 2.0,
+    kp_linear: float = 0.8,
 ) -> FollowCommand:
     """跟随控制律：由目标水平位置和视觉宽度算出 (线速度, 角速度)。
 
@@ -67,25 +70,25 @@ def compute_follow_command(
     - 误差 = cx - 0.5（目标偏离画面中心的量，右偏为正）；
     - 死区 center_deadband 内不转向，避免目标在中心附近小幅抖动时
       机器人不停地左右摆（震荡）；
-    - 比例增益 -2.0：负号是因为图像坐标系里目标偏右（误差为正）时，
+    - 比例增益 -kp_angular：负号是因为图像坐标系里目标偏右（误差为正）时，
       机器人应向右转，而 ROS 的 angular.z 正方向是逆时针（左转），
       所以要取反；
     - 最后限幅到 [-max_angular, max_angular]，防止误差大时输出危险的角速度。
 
     前进通道：
     - 误差 = desired_width - target_width（目标看起来比期望小 -> 太远 -> 前进）；
-    - 比例增益 0.8，限幅上限 max_linear；
+    - 比例增益 kp_linear，限幅上限 max_linear；
     - 后退上限刻意压到 max_linear * 0.4：机器人尾部没有传感器，
       倒车要比前进保守得多；
     - target_width <= 0 表示上游没有有效宽度信息，此时距离未知，
       宁可不动（linear=0）也不要瞎猜着前进。
     """
     error_x = cx - 0.5
-    angular = 0.0 if abs(error_x) < center_deadband else -2.0 * error_x
+    angular = 0.0 if abs(error_x) < center_deadband else -kp_angular * error_x
     angular = max(-max_angular, min(max_angular, angular))
 
     width_error = desired_width - target_width
-    linear = max(-max_linear * 0.4, min(max_linear, width_error * 0.8))
+    linear = max(-max_linear * 0.4, min(max_linear, width_error * kp_linear))
     if target_width <= 0.0:
         linear = 0.0
     return FollowCommand(linear, angular, True, "target_confirmed")
@@ -106,19 +109,21 @@ class VisionFollowController(Node):
     两个回调协同工作：
     - _event_cb（事件驱动）：每收到一条确认目标事件就算一次控制律并发速度；
     - _watchdog（10 Hz 定时器）：发现事件断流超时就发零速。
-    速度指令发到 /controller/cmd_vel_nav（与 Nav2 控制器同一个入口），
-    由下游速度混控/安全层统一仲裁。
+    速度指令默认发到 /cmd_vel_follow，由 cmd_vel_arbiter 与遥控/导航仲裁后再进安全门。
     """
 
     def __init__(self) -> None:
         super().__init__("mecamind_vision_follow_controller")
         self.declare_parameter("input_topic", "/mecamind/perception_event")
-        self.declare_parameter("output_cmd_topic", "/controller/cmd_vel_nav")
+        self.declare_parameter("output_cmd_topic", "/cmd_vel_follow")
         self.declare_parameter("enable_topic", "/mecamind/follow_enable")
         self.declare_parameter("desired_width", 0.25)
         self.declare_parameter("event_timeout_sec", 0.70)
         self.declare_parameter("max_linear", 0.20)
         self.declare_parameter("max_angular", 0.8)
+        self.declare_parameter("center_deadband", 0.05)
+        self.declare_parameter("kp_angular", 2.0)
+        self.declare_parameter("kp_linear", 0.8)
 
         # 安全默认值：启动即禁用，必须显式发 True 到 enable topic 才会动。
         self._enabled = False
@@ -164,8 +169,11 @@ class VisionFollowController(Node):
             float(event.get("cx", 0.5)),
             float(event.get("width", 0.0)),
             desired_width=float(self.get_parameter("desired_width").value),
+            center_deadband=float(self.get_parameter("center_deadband").value),
             max_linear=float(self.get_parameter("max_linear").value),
             max_angular=float(self.get_parameter("max_angular").value),
+            kp_angular=float(self.get_parameter("kp_angular").value),
+            kp_linear=float(self.get_parameter("kp_linear").value),
         )
         # 步骤 4：换算成 ROS Twist 消息并发布，同时刷新看门狗时间戳。
         # 用 time.monotonic() 而不是 time.time()：单调时钟不受系统时间

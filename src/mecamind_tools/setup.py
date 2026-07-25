@@ -55,6 +55,7 @@ setup(
             "mecamind_safety_gate = mecamind_tools.safety_layer:main",
             "mecamind_perception_filter = mecamind_tools.perception_filter:main",
             "mecamind_vision_follow_controller = mecamind_tools.vision_follow_controller:main",
+            "mecamind_follow_target_mover = mecamind_tools.follow_target_mover:main",
             "mecamind_fake_detection_publisher = mecamind_tools.fake_detection_publisher:main",
             "mecamind_mission_executor = mecamind_tools.mission_executor:main",
             "mecamind_nav_acceptance = mecamind_tools.nav_acceptance:main",
