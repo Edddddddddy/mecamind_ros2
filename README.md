@@ -11,26 +11,42 @@
 
 ## 获取代码与课程 Tag
 
-克隆仓库后，**第一节课请切换到 tag `lesson1.0`**，保证与课堂资料版本一致：
+克隆仓库后，按当节课切换到对应 tag，保证与课堂资料版本一致：
 
 ```bash
 git clone git@gitlab.0voice.com:2604_vip/10.3-mecamind_ros2.git ~/mecamind_ros2
 cd ~/mecamind_ros2
 git fetch --tags
-git checkout lesson1.0
+git checkout lesson1.0   # 第一节课；其后按表切换
+```
+
+| 课程 | Tag | 说明 |
+| --- | --- | --- |
+| 第一节课 | `lesson1.0` | 项目总览与仿真环境搭建 |
+| 第二节课 | `lesson2.0` | SLAM 建图与地图管理 |
+| 第三节课 | `lesson3.0` | Nav2 导航系统与路径规划 |
+| 第四节课 | `lesson4.0` | YOLO 目标检测与 ROS 2 节点接入 |
+
+第四节课示例：
+
+```bash
+git fetch --tags
+git checkout lesson4.0
 ```
 
 说明：
 
-- `git fetch --tags` 成功时可能没有输出，属正常；用 `git tag -l` 确认本地已有 `lesson1.0`。
+- `git fetch --tags` 成功时可能没有输出，属正常；用 `git tag -l` 确认本地已有对应 tag。
 - 查看远端 tag：`git ls-remote --tags origin`
-- 后续课程会继续打 `lesson2.0`、`lesson3.0` …，按当节课说明切换即可。
+- 后续课程会继续打 `lesson5.0` …，按当节课说明切换即可。
 - 若要回到最新开发分支：`git checkout main && git pull`
 
-讲义：
+讲义（仓库发布 PDF；本地若有 Markdown 源稿同名即可）：
 
-- 第一节课：`docs/10.3.1_项目总览与仿真环境搭建.md`
-- 第二节课：`docs/10.3.2_SLAM建图与地图管理.md`
+- 第一节课：`docs/10.3.1_项目总览与仿真环境搭建.pdf`
+- 第二节课：`docs/10.3.2_SLAM建图与地图管理.pdf`
+- 第三节课：`docs/10.3.3_Nav2导航系统与路径规划.pdf`
+- 第四节课：`docs/10.3.4_YOLO目标检测与ROS2节点接入.pdf`
 
 ## 环境
 
@@ -48,6 +64,12 @@ bash setup/check_environment.sh
 
 ```bash
 bash setup/install_dependencies.sh
+```
+
+第四课若要跑 YOLO / ONNX（可选，不装也能用 HSV 兜底完成课堂主线）：
+
+```bash
+bash setup/install_dependencies.sh --with-ml
 ```
 
 ## 构建
@@ -183,6 +205,97 @@ MECAMIND_CP3_BACKEND=gazebo bash scripts/test_cp3.sh    # Gazebo headless，10~2
 ```
 
 自动完成"启动导航栈 → 三个命名目标 → 运动中取消"全流程，成功标志：`MECAMIND_CP3_OK`，报告写入 `maps/mecamind_cp3_<backend>_nav_report.json`。
+
+## 第四次课：YOLO 目标检测
+
+先编译感知相关包（若尚未编译）：
+
+```bash
+cd ~/mecamind_ros2
+source /opt/ros/jazzy/setup.bash
+colcon build --symlink-install --packages-select \
+  mecamind_interfaces mecamind_perception mecamind_tools mecamind_bringup
+source install/setup.bash
+```
+
+**零依赖主线**（默认合成画面 + HSV 兜底，不装 PyTorch / ultralytics 也能看见绿框）：
+
+```bash
+ros2 launch mecamind_bringup perception.launch.py
+```
+
+看检测结果（另开终端）：
+
+```bash
+ros2 topic echo /mecamind/detections --once
+ros2 topic echo /mecamind/perception_metrics --once
+ros2 topic echo /mecamind/perception_event --once
+```
+
+**可选：安装 YOLO / ONNX 依赖**（想跑真神经网络时）：
+
+```bash
+./setup/install_dependencies.sh --with-ml
+```
+
+等价于：
+
+```bash
+pip install --user --break-system-packages "setuptools<80" ultralytics onnx onnxruntime
+```
+
+Ubuntu 24.04 系统 Python 受 PEP 668 保护，直接 `pip install xxx` 常会报 `externally-managed-environment`，请用上面的课程命令。装好后自检：
+
+```bash
+python3 -c "import ultralytics, onnx, onnxruntime; print('ML ok')"
+ls -lh models/yolov8n.pt models/yolov8n.onnx
+```
+
+权重与演示素材已放在仓库：`models/`、`assets/yolo_demo.mp4`、`assets/bus.jpg`。若本地没有 `.onnx`，可自行导出：
+
+```bash
+python3 scripts/export_yolo_onnx.py
+```
+
+真实 YOLO（视频源；**不要**用 synthetic 考 YOLO——红方块不是 COCO 类别）：
+
+```bash
+# ultralytics + .pt
+ros2 launch mecamind_bringup perception.launch.py \
+  source:=video \
+  video_path:=$HOME/mecamind_ros2/assets/yolo_demo.mp4 \
+  backend:=ultralytics \
+  model_path:=$HOME/mecamind_ros2/models/yolov8n.pt
+
+# onnxruntime + .onnx
+ros2 launch mecamind_bringup perception.launch.py \
+  source:=video \
+  video_path:=$HOME/mecamind_ros2/assets/yolo_demo.mp4 \
+  backend:=onnx \
+  model_path:=$HOME/mecamind_ros2/models/yolov8n.onnx
+```
+
+有 Gazebo / 真机相机时：`source:=camera camera_topic:=/camera/image_raw`。无图形界面可加 `with_ui:=false`。
+
+## CP4 验收
+
+```bash
+bash scripts/test_cp4.sh
+# 默认 synthetic + auto → 落到 hsv，零依赖可过
+
+MECAMIND_CP4_SOURCE=video \
+MECAMIND_CP4_VIDEO=assets/yolo_demo.mp4 \
+MECAMIND_CP4_BACKEND=onnx \
+MECAMIND_CP4_MODEL=models/yolov8n.onnx \
+bash scripts/test_cp4.sh
+
+MECAMIND_CP4_SOURCE=video \
+MECAMIND_CP4_VIDEO=assets/yolo_demo.mp4 \
+MECAMIND_CP4_BACKEND=ultralytics \
+bash scripts/test_cp4.sh
+```
+
+成功标志：`MECAMIND_CP4_OK`，报告写入 `maps/mecamind_cp4_report.json`。跑验收前建议先 `bash scripts/cleanup_ros2.sh`。
 
 ## 一键清理测试残留
 
