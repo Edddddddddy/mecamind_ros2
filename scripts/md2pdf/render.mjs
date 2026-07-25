@@ -56,7 +56,7 @@ const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
   th { background: #edf2f7; }
   blockquote { border-left: 4px solid #2b6cb0; background: #f0f6fc; margin: 10px 0; padding: 6px 14px; color: #2d3748; }
   figure { margin: 14px 0; text-align: center; page-break-inside: avoid; }
-  figure img { max-width: 92%; border: 1px solid #d0d7de; border-radius: 4px; }
+  figure img { max-width: 96%; width: auto; height: auto; image-rendering: -webkit-optimize-contrast; border: 1px solid #d0d7de; border-radius: 4px; }
   .img-caption { font-size: 9pt; color: #57606a; margin-top: 5px; }
   hr { border: none; border-top: 1px dashed #a0aec0; margin: 22px 0; }
   a { color: #2b6cb0; text-decoration: none; }
@@ -71,6 +71,7 @@ const executablePath = `${chromeDir}/${ver}/chrome-linux64/chrome`;
 
 const browser = await puppeteer.launch({ executablePath, args: ["--no-sandbox", "--disable-gpu"] });
 const page = await browser.newPage();
+await page.setViewport({ width: 1280, height: 1800, deviceScaleFactor: 2 });
 // Large docs embed multi‑MB images as data URLs; networkidle0 often never settles.
 await page.setContent(html, { waitUntil: "load", timeout: 180000 });
 

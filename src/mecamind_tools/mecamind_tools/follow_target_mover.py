@@ -1,14 +1,29 @@
-"""Gazebo 红色跟随目标：客厅前方空地绕圈（教学简化版）。
+"""Gazebo 红色跟随目标驱动：客厅南侧空地绕圈（第 5 课演示专用）。
 
-【为什么这样】
-直线往返若朝小车方向来回，红柱会顶到车头。
-改为车南方空地单向绕圈：始终在视野前方，且与小车保持距离。
+【在系统中的角色】
+只服务「课堂看得见」的演示，不参与控制律本身。
+- 通过 `gz service .../set_pose` 周期性改写模型位姿；
+- 默认驱动模型名 `follow_target`（红柱）；
+- 可选同时把小车摆回出生位姿（防仿真漂移/叠实例搞乱初始化）。
 
-默认：
+【为什么绕圈而不是朝车直线往返】
+直线若落在车头方向，红柱会顶到/穿进车身，观感差也难跟。
+改为车南方空地单向闭环：始终在视野前方，并与小车保持距离。
+
+默认几何（可被 launch 参数覆盖）：
   圆心约 (-2.3, -1.2)、半径约 1.1m 的六边形近似圆
-  小车 (-2.0, 1.95) 朝南旁观，最近点约 2m，不对撞
+  小车 (-2.0, 1.95) 朝南旁观
 
-等 /mecamind/follow_enable=true 后再开跑，避免柱子先跑丢。
+【时序】
+1. startup_delay：等 Gazebo 服务起来；
+2. _place_start：确认小车/红柱出生位姿；
+3. 等到 /mecamind/follow_enable=true（可关）；
+4. follow_start_delay 后再沿折线推进弧长 s。
+
+初学者重点阅读：
+1. closed_loop 如何把折线首尾闭合；
+2. _on_timer 里弧长 s 的推进与 set_pose；
+3. _follow_enable_cb 上升沿为何要重置 _placed（重新摆位再开跑）。
 """
 
 from __future__ import annotations
@@ -28,6 +43,7 @@ Point = Tuple[float, float]
 
 
 def _parse_waypoints(raw: object) -> List[Point]:
+    """解析 waypoints_xy：支持扁平 [x0,y0,x1,y1,...] 或嵌套 [[x,y],...]。"""
     if isinstance(raw, str):
         data = ast.literal_eval(raw)
     else:
@@ -46,6 +62,7 @@ def _parse_waypoints(raw: object) -> List[Point]:
 
 
 def _polyline_length(pts: Sequence[Point]) -> float:
+    """折线总弧长（米）。"""
     total = 0.0
     for i in range(1, len(pts)):
         x0, y0 = pts[i - 1]
@@ -55,6 +72,7 @@ def _polyline_length(pts: Sequence[Point]) -> float:
 
 
 def _point_on_polyline(pts: Sequence[Point], dist: float) -> Point:
+    """沿折线弧长 dist 取点；超出末端则钳在终点。"""
     if dist <= 0.0:
         return pts[0]
     traveled = 0.0
@@ -72,6 +90,8 @@ def _point_on_polyline(pts: Sequence[Point], dist: float) -> Point:
 
 
 class FollowTargetMover(Node):
+    """定时器驱动：沿 waypoints 折线（可闭环）推进红柱位姿。"""
+
     def __init__(self) -> None:
         super().__init__("mecamind_follow_target_mover")
         self.declare_parameter("world_name", "three_room_house")
@@ -114,6 +134,7 @@ class FollowTargetMover(Node):
                 (-1.75, -2.15),
                 (-1.35, -0.65),
             ]
+        # closed_loop=True 时把起点追加到末尾，才能用 fmod(s) 真正绕圈
         self._path_pts = list(self._waypoints)
         if bool(self.get_parameter("closed_loop").value):
             if math.hypot(
@@ -122,9 +143,9 @@ class FollowTargetMover(Node):
             ) > 1e-3:
                 self._path_pts.append(self._path_pts[0])
         self._path_len = max(0.1, _polyline_length(self._path_pts))
-        self._s = 0.0
-        self._direction = 1.0
-        self._busy = False
+        self._s = 0.0  # 当前弧长位置
+        self._direction = 1.0  # ping_pong 时用；闭环模式保持 +1
+        self._busy = False  # set_pose 进行中，避免重入
         self._placed = False
         self._place_tries = 0
         self._follow_armed = not bool(self.get_parameter("wait_for_follow_enable").value)
@@ -151,6 +172,11 @@ class FollowTargetMover(Node):
         )
 
     def _follow_enable_cb(self, msg: Bool) -> None:
+        """跟随使能上升沿：重置轨迹并从出生点重新摆位后再开跑。
+
+        注意：只在 False→True 时重置；重复的 True 不重置，避免自动连发
+        把已经在绕圈的红柱反复拽回起点。
+        """
         if bool(msg.data):
             if self._follow_armed:
                 return
@@ -168,6 +194,7 @@ class FollowTargetMover(Node):
             self._follow_armed_wall = None
 
     def _on_timer(self) -> None:
+        """心跳：先摆位 → 等使能 → 沿折线推进并 set_pose。"""
         if (
             not bool(self.get_parameter("enabled").value)
             or not self._gz_bin
@@ -200,6 +227,7 @@ class FollowTargetMover(Node):
         speed = max(0.02, float(self.get_parameter("speed_mps").value))
         self._s += self._direction * speed * dt
 
+        # ping_pong 仅在非闭环时生效；闭环用 fmod 单向循环
         if bool(self.get_parameter("ping_pong").value) and not bool(
             self.get_parameter("closed_loop").value
         ):
@@ -226,6 +254,7 @@ class FollowTargetMover(Node):
             )
 
     def _place_start(self) -> None:
+        """把小车/红柱摆到演示出生点；失败会重试若干次。"""
         self._place_tries += 1
         ok_robot = True
         if bool(self.get_parameter("reposition_robot").value):
@@ -263,6 +292,11 @@ class FollowTargetMover(Node):
         z: float,
         yaw: Optional[float] = None,
     ) -> bool:
+        """调用 Gazebo Harmonic 的 /world/<name>/set_pose 服务。
+
+        成功判据：进程返回码 0 且 stdout 含 `data: true`。
+        忙碌/超时时返回 False，由上层重试或跳过本拍。
+        """
         world = str(self.get_parameter("world_name").value)
         req = f'name: "{name}", position: {{x: {x:.4f}, y: {y:.4f}, z: {z:.4f}}}'
         if yaw is not None:
@@ -308,6 +342,7 @@ class FollowTargetMover(Node):
 
 
 def main(args: Optional[list] = None) -> None:
+    """节点入口。"""
     rclpy.init(args=args)
     node = FollowTargetMover()
     try:

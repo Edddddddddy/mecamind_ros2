@@ -79,10 +79,12 @@ def compute_follow_command(
     前进通道（远快近慢）：
     - 用目标在画面里的宽度近似距离：越远看起来越小；
     - proximity = target_width / desired_width：<1 偏远、=1 合适、>1 过近；
-    - 偏远时线速度随距离增大（最大 max_linear）；过近时轻退；
+    - 偏远时线速度随距离增大（最大 max_linear）；过近时明显后退（防顶柱/穿模）；
     - kp_linear 作为灵敏度（>1 更积极追赶）；
     - 转向偏差大时自动压低线速度，避免边转边冲把目标甩出画面；
     - target_width <= 0 时距离未知，线速度为 0。
+
+    源码位置：本函数；讲义 §2.2 / 源码走读第 3 章。
     """
     error_x = cx - 0.5
     angular = 0.0 if abs(error_x) < center_deadband else -kp_angular * error_x
