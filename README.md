@@ -26,6 +26,7 @@ git checkout lesson1.0   # 第一节课；其后按表切换
 | 第二节课 | `lesson2.0` | SLAM 建图与地图管理 |
 | 第三节课 | `lesson3.0` | Nav2 导航系统与路径规划 |
 | 第四节课 | `lesson4.0` | YOLO 目标检测与 ROS 2 节点接入 |
+| 第五节课 | `lesson5.0`（待打 tag） | 多线程推理与视觉跟随控制 |
 
 第四节课示例：
 
@@ -38,7 +39,7 @@ git checkout lesson4.0
 
 - `git fetch --tags` 成功时可能没有输出，属正常；用 `git tag -l` 确认本地已有对应 tag。
 - 查看远端 tag：`git ls-remote --tags origin`
-- 后续课程会继续打 `lesson5.0` …，按当节课说明切换即可。
+- 第五节讲义已就绪；冻结版本时再打 `lesson5.0`。其后 `lesson6.0` 同理。
 - 若要回到最新开发分支：`git checkout main && git pull`
 
 讲义（仓库发布 PDF；本地若有 Markdown 源稿同名即可）：
@@ -47,6 +48,7 @@ git checkout lesson4.0
 - 第二节课：`docs/10.3.2_SLAM建图与地图管理.pdf`
 - 第三节课：`docs/10.3.3_Nav2导航系统与路径规划.pdf`
 - 第四节课：`docs/10.3.4_YOLO目标检测与ROS2节点接入.pdf`
+- 第五节课：`docs/10.3.5_多线程推理与视觉跟随控制.pdf`
 
 ## 环境
 
@@ -296,6 +298,57 @@ bash scripts/test_cp4.sh
 ```
 
 成功标志：`MECAMIND_CP4_OK`，报告写入 `maps/mecamind_cp4_report.json`。跑验收前建议先 `bash scripts/cleanup_ros2.sh`。
+
+## 第五次课：多线程推理与视觉跟随
+
+先编译相关包（若尚未编译）：
+
+```bash
+cd ~/mecamind_ros2
+source /opt/ros/jazzy/setup.bash
+colcon build --packages-select \
+  mecamind_interfaces mecamind_perception mecamind_tools \
+  mecamind_bringup mecamind_gazebo --symlink-install
+source install/setup.bash
+```
+
+零依赖冒烟（lite + 合成红块 + HSV）：
+
+```bash
+bash scripts/cleanup_ros2.sh
+ros2 launch mecamind_bringup follow.launch.py \
+  backend:=lite source:=synthetic infer_backend:=hsv
+```
+
+Gazebo 课堂演示（车载相机 + HSV + 客厅南侧红柱绕圈）：
+
+```bash
+bash scripts/cleanup_ros2.sh
+ros2 launch mecamind_bringup follow.launch.py \
+  backend:=gazebo use_gui:=true \
+  source:=camera infer_backend:=hsv \
+  moving_target:=true target_label:=person
+```
+
+约 10 秒后自动打开跟随；也可手动：
+
+```bash
+ros2 topic pub --once /mecamind/follow_enable std_msgs/msg/Bool '{data: true}'
+```
+
+调试图窗口（可选）：`python3 scripts/show_detection_image.py`
+
+## CP5 验收
+
+```bash
+bash scripts/cleanup_ros2.sh
+bash scripts/test_cp5.sh
+# 默认 lite + synthetic + hsv，零依赖可过
+
+MECAMIND_CP5_BACKEND=gazebo bash scripts/test_cp5.sh
+```
+
+成功标志：`MECAMIND_CP5_OK`，报告写入 `maps/mecamind_cp5_report.json`。
 
 ## 一键清理测试残留
 

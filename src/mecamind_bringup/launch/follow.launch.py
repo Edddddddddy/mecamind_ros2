@@ -29,7 +29,8 @@ detector(synthetic/camera/video) -> /mecamind/detections
 【上课操作提示】
 - 约 10s 后自动打开跟随；也可手动：
   ros2 topic pub --once /mecamind/follow_enable std_msgs/msg/Bool '{data: true}'
-- Gazebo 简化演示：红柱只在客厅南北短直线慢速往返，先保证跟得住。
+- Gazebo 课堂演示：红柱在客厅南侧空地单向绕圈（远离车头），小车朝南跟随；
+  距离由 desired_width 调节，过近会主动后退。
 """
 
 from ament_index_python.packages import get_package_share_directory
