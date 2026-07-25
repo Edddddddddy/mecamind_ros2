@@ -447,7 +447,7 @@ class DetectorNode(Node):
                 continue
             t0 = time.monotonic()
             try:
-                detections = self._backend.detect(packet.frame)
+                detections = self._backend.detect(packet.frame) # 有可能是有多个目标
             except Exception as exc:  # noqa: BLE001
                 self.get_logger().warn(f"推理失败：{exc}")
                 continue
@@ -458,9 +458,9 @@ class DetectorNode(Node):
             msg.header.frame_id = "camera_optical_frame"
             msg.backend = self._backend.name
             msg.inference_ms = float(infer_ms)
-            for label, conf, cx, cy, bw, bh in detections:
+            for label, conf, cx, cy, bw, bh in detections:  # 分不同的目标画出框框 标注
                 det = Detection2D()
-                det.label = label
+                det.label = label # person/bus
                 det.confidence = float(conf)
                 det.cx, det.cy, det.width, det.height = float(cx), float(cy), float(bw), float(bh)
                 msg.detections.append(det)

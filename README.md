@@ -50,7 +50,6 @@ git checkout lesson4.0
 - 第四节课：`docs/10.3.4_YOLO目标检测与ROS2节点接入.pdf`
 - 第五节课：`docs/10.3.5_多线程推理与视觉跟随控制.pdf`
 - 第五节课源码走读：`docs/10.3.5_工程版源码走读.pdf`
-- 第五节课讲师授课稿：`docs/10.3.5_讲师授课稿_120分钟_详解版.pdf`
 - 第五节课白板：`docs/10.3.5_多线程推理与视觉跟随控制.excalidraw`（预览图同名 `.png`）
 
 ## 环境
@@ -304,28 +303,14 @@ bash scripts/test_cp4.sh
 
 ## 第五次课：多线程推理与视觉跟随
 
-先编译相关包（若尚未编译）：
+### 课堂主演示（一条命令）
+
+Gazebo + 车载相机 + HSV + 客厅南侧红柱绕圈：
 
 ```bash
 cd ~/mecamind_ros2
 source /opt/ros/jazzy/setup.bash
-colcon build --packages-select \
-  mecamind_interfaces mecamind_perception mecamind_tools \
-  mecamind_bringup mecamind_gazebo --symlink-install
 source install/setup.bash
-```
-
-零依赖冒烟（lite + 合成红块 + HSV）：
-
-```bash
-bash scripts/cleanup_ros2.sh
-ros2 launch mecamind_bringup follow.launch.py \
-  backend:=lite source:=synthetic infer_backend:=hsv
-```
-
-Gazebo 课堂演示（车载相机 + HSV + 客厅南侧红柱绕圈）：
-
-```bash
 bash scripts/cleanup_ros2.sh
 ros2 launch mecamind_bringup follow.launch.py \
   backend:=gazebo use_gui:=true \
@@ -339,7 +324,27 @@ ros2 launch mecamind_bringup follow.launch.py \
 ros2 topic pub --once /mecamind/follow_enable std_msgs/msg/Bool '{data: true}'
 ```
 
-调试图窗口（可选）：`python3 scripts/show_detection_image.py`
+可选检测窗口：`python3 scripts/show_detection_image.py`  
+结束：`Ctrl+C`，再 `bash scripts/cleanup_ros2.sh`。
+
+### 首次 / 改源码后先编译
+
+```bash
+cd ~/mecamind_ros2
+source /opt/ros/jazzy/setup.bash
+colcon build --packages-select \
+  mecamind_interfaces mecamind_perception mecamind_tools \
+  mecamind_bringup mecamind_gazebo --symlink-install
+source install/setup.bash
+```
+
+### 零依赖冒烟（lite + 合成红块 + HSV）
+
+```bash
+bash scripts/cleanup_ros2.sh
+ros2 launch mecamind_bringup follow.launch.py \
+  backend:=lite source:=synthetic infer_backend:=hsv
+```
 
 ## CP5 验收
 

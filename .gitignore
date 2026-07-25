@@ -18,6 +18,9 @@ maps/*.png
 PROJECT_PLAN.md
 docs/*.md
 
+# 讲师授课稿（内部用，md/pdf 均不入库）
+docs/10.3.5_讲师授课稿_120分钟_详解版.*
+
 # md2pdf 本地依赖（只提交 package.json / package-lock.json / render.mjs）
 scripts/md2pdf/node_modules/
 node_modules/
