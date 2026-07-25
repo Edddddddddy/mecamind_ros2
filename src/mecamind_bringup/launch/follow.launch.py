@@ -27,16 +27,19 @@ detector(synthetic/camera/video) -> /mecamind/detections
   -> vision_follow_controller -> /cmd_vel_follow
 
 【上课操作提示】
-- 跟随默认关闭，打开开关：
+- 约 10s 后自动打开跟随；也可手动：
   ros2 topic pub --once /mecamind/follow_enable std_msgs/msg/Bool '{data: true}'
-- 急停/解除：
-  ros2 topic pub --once /mecamind/estop std_msgs/msg/Bool '{data: true}'
-- 默认 synthetic 源的目标会左右移动，机器人应跟着左右转向。
+- Gazebo 简化演示：红柱只在客厅南北短直线慢速往返，先保证跟得住。
 """
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.actions import (
+    DeclareLaunchArgument,
+    ExecuteProcess,
+    IncludeLaunchDescription,
+    TimerAction,
+)
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PythonExpression
@@ -67,7 +70,11 @@ def generate_launch_description():
 
     gazebo_backend = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(f"{gazebo_share}/launch/gazebo_sim.launch.py"),
-        launch_arguments={"use_gui": use_gui}.items(),
+        launch_arguments={
+            "use_gui": use_gui,
+            # 跟随专用世界：小车直接出生在客厅起点后方朝南
+            "world": f"{gazebo_share}/worlds/three_room_house_follow.sdf",
+        }.items(),
         condition=is_gazebo,
     )
     lite_backend = IncludeLaunchDescription(
@@ -103,7 +110,7 @@ def generate_launch_description():
         parameters=[{"target_label": target_label}],
     )
 
-    # ---- Gazebo：红柱走跨房间 L 形（客厅→南下→横穿）----
+    # ---- Gazebo：客厅南侧空地绕圈（不朝车头对撞）----
     follow_target_mover = Node(
         package="mecamind_tools",
         executable="mecamind_follow_target_mover",
@@ -114,21 +121,29 @@ def generate_launch_description():
             {"use_sim_time": True},
             {"world_name": "three_room_house"},
             {"model_name": "follow_target"},
-            # 客厅 → 向下门厅 → 沿南侧通道横穿（避开隔断/柱子）
-            {"waypoints_xy": "[-2.0, 1.0, -2.0, -2.15, 2.2, -2.15]"},
+            # 圆心(-2.2,-1.0) r≈0.75 六边形；最近点约 y=-0.25，车在 y=1.95
+            {
+                "waypoints_xy": (
+                    "[-2.20,-0.25, -2.85,-0.63, -2.58,-1.65, "
+                    "-2.20,-1.75, -1.83,-1.65, -1.55,-0.63]"
+                )
+            },
             {"z": 0.38},
-            {"speed_mps": 0.16},
-            {"rate_hz": 5.0},
-            {"startup_delay_sec": 8.0},
-            {"ping_pong": True},
+            {"speed_mps": 0.10},
+            {"rate_hz": 4.0},
+            {"startup_delay_sec": 6.0},
+            {"wait_for_follow_enable": True},
+            {"follow_start_delay_sec": 2.0},
+            {"ping_pong": False},
+            {"closed_loop": True},
             {"reposition_robot": True},
             {"robot_x": -2.0},
-            {"robot_y": 1.55},
-            {"robot_yaw": -1.5708},  # 朝南，对准 L 第一段
+            {"robot_y": 1.95},
+            {"robot_yaw": -1.5708},
         ],
     )
 
-    # ---- 跟随控制器：输出到 /cmd_vel_follow，交给仲裁器 ----
+    # ---- 跟随控制器 ----
     follow_controller = Node(
         package="mecamind_tools",
         executable="mecamind_vision_follow_controller",
@@ -136,11 +151,29 @@ def generate_launch_description():
         output="screen",
         parameters=[
             {"output_cmd_topic": "/cmd_vel_follow"},
-            {"desired_width": 0.35},
-            {"max_linear": 0.28},
+            # desired_width 适中：跟近但不贴脸；过近时控制器会大力后退
+            {"desired_width": 0.28},
+            {"max_linear": 0.22},
             {"max_angular": 1.0},
-            {"kp_linear": 1.0},
-            {"kp_angular": 2.4},
+            {"kp_linear": 1.1},
+            {"kp_angular": 2.2},
+            {"search_on_loss": True},
+            {"search_angular": 0.45},
+        ],
+    )
+
+    # ~10s 后自动打开跟随（连发，避免丢消息）
+    auto_enable_follow = TimerAction(
+        period=10.0,
+        actions=[
+            ExecuteProcess(
+                cmd=[
+                    "bash",
+                    "-lc",
+                    "for i in 1 2 3 4 5; do ros2 topic pub --once /mecamind/follow_enable std_msgs/msg/Bool '{data: true}'; sleep 0.8; done",
+                ],
+                output="screen",
+            )
         ],
     )
 
@@ -209,5 +242,6 @@ def generate_launch_description():
             follow_controller,
             arbiter,
             safety_gate,
+            auto_enable_follow,
         ]
     )

@@ -1,14 +1,10 @@
 <?xml version="1.0"?>
 <!--
-  三室户教学世界（Gazebo 版）。
+  第五课视觉跟随专用世界（基于 three_room_house）。
 
-  【布局】7.8m x 5.9m 的外墙围出一套房，两道隔断墙把室内分成
-  客厅（左上）、卧室（右上）、下方门厅/走廊三块区域，另摆了
-  桌子、柜子、方柱三件家具当建图/避障障碍物。
-  【一致性要求】墙体/家具坐标必须与轻量仿真的
-  mecamind_tools/worlds/three_room_house.world 和
-  world_geometry.py 保持一致，两个后端才会"看到"同一个环境，
-  地图质量分析工具也是按这份几何来验收四面墙的。
+  与建图/导航世界几何相同，但小车出生在客厅轨迹起点后方并朝南，
+  红柱出生在起点，避免依赖启动后 set_pose（忙碌时超时会看起来像
+  “初始化位置不对”）。世界名仍为 three_room_house，桥接话题不变。
 -->
 <sdf version="1.9">
   <world name="three_room_house">
@@ -81,21 +77,17 @@
       </link>
     </model>
 
-    <!-- 引入机器人模型（在 GZ_SIM_RESOURCE_PATH 指向的 models/ 目录
-         下查找）。默认出生原点，供建图/导航共用；第五课跟随由
-         follow_target_mover 再摆到客厅起点后方。 -->
+    <!-- 跟随演示：小车在北旁观，红柱在南侧空地绕圈起点。 -->
     <include>
       <uri>model://mecamind_mecanum</uri>
       <name>mecamind_mecanum</name>
-      <pose>0 0 0.10 0 0 0</pose>
+      <pose>-2.0 1.95 0.10 0 0 -1.5708</pose>
     </include>
 
-    <!-- 第五课视觉跟随：细红柱，出生在客厅轨迹起点；
-         mover 驱动红柱走跨房间单向闭环（绕开南侧柱子夹缝） -->
     <include>
       <uri>model://follow_target</uri>
       <name>follow_target</name>
-      <pose>-2.0 1.0 0.38 0 0 0</pose>
+      <pose>-2.20 -0.25 0.38 0 0 0</pose>
     </include>
   </world>
 </sdf>

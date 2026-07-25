@@ -19,10 +19,11 @@
 2. confirmed 门槛：只响应过滤节点确认过的目标，不追误检；
 3. 看门狗超时：目标事件断流超过 event_timeout_sec 秒就发零速刹停,
    防止"最后一条指令是前进"时目标丢失导致机器人一直往前冲。
+   可选 search_on_loss：丢目标后改为原地慢转搜索，便于重新看见目标。
 
 初学者重点阅读：
 1. compute_follow_command —— 控制律本体（纯函数，可单独测试）；
-2. _watchdog —— 超时刹停看门狗；
+2. _watchdog —— 超时刹停/搜索看门狗；
 3. _enable_cb —— 关闭跟随时为什么要立刻发零速。
 """
 
@@ -75,22 +76,37 @@ def compute_follow_command(
       所以要取反；
     - 最后限幅到 [-max_angular, max_angular]，防止误差大时输出危险的角速度。
 
-    前进通道：
-    - 误差 = desired_width - target_width（目标看起来比期望小 -> 太远 -> 前进）；
-    - 比例增益 kp_linear，限幅上限 max_linear；
-    - 后退上限刻意压到 max_linear * 0.4：机器人尾部没有传感器，
-      倒车要比前进保守得多；
-    - target_width <= 0 表示上游没有有效宽度信息，此时距离未知，
-      宁可不动（linear=0）也不要瞎猜着前进。
+    前进通道（远快近慢）：
+    - 用目标在画面里的宽度近似距离：越远看起来越小；
+    - proximity = target_width / desired_width：<1 偏远、=1 合适、>1 过近；
+    - 偏远时线速度随距离增大（最大 max_linear）；过近时轻退；
+    - kp_linear 作为灵敏度（>1 更积极追赶）；
+    - 转向偏差大时自动压低线速度，避免边转边冲把目标甩出画面；
+    - target_width <= 0 时距离未知，线速度为 0。
     """
     error_x = cx - 0.5
     angular = 0.0 if abs(error_x) < center_deadband else -kp_angular * error_x
     angular = max(-max_angular, min(max_angular, angular))
 
-    width_error = desired_width - target_width
-    linear = max(-max_linear * 0.4, min(max_linear, width_error * kp_linear))
     if target_width <= 0.0:
-        linear = 0.0
+        return FollowCommand(0.0, angular, True, "no_width")
+
+    proximity = target_width / max(1e-3, desired_width)
+    if proximity < 1.0:
+        # 越远（proximity 越小）越快；kp_linear 放大追赶积极性
+        linear = max_linear * (1.0 - proximity) * max(0.5, kp_linear)
+        linear = min(max_linear, linear)
+    else:
+        # 过近：明显后退，避免顶到/穿进目标
+        overshoot = min(2.0, proximity - 1.0)
+        linear = -max_linear * 0.95 * min(1.0, overshoot / 0.6)
+
+    # 大转向时压线速度，先对准再加速
+    turn = abs(error_x)
+    if turn > center_deadband:
+        turn_scale = max(0.25, 1.0 - (turn - center_deadband) / 0.40)
+        linear *= turn_scale
+
     return FollowCommand(linear, angular, True, "target_confirmed")
 
 
@@ -124,11 +140,15 @@ class VisionFollowController(Node):
         self.declare_parameter("center_deadband", 0.05)
         self.declare_parameter("kp_angular", 2.0)
         self.declare_parameter("kp_linear", 0.8)
+        # 丢目标后原地慢转搜索（柱子遮挡、拐弯出画面时的恢复手段）
+        self.declare_parameter("search_on_loss", True)
+        self.declare_parameter("search_angular", 0.55)
 
         # 安全默认值：启动即禁用，必须显式发 True 到 enable topic 才会动。
         self._enabled = False
         # 最近一次发出速度指令的单调时钟时间；0.0 表示"当前没有在跟随"。
         self._last_event_time = 0.0
+        self._searching = False
         self.create_subscription(String, str(self.get_parameter("input_topic").value), self._event_cb, 10)
         self.create_subscription(Bool, str(self.get_parameter("enable_topic").value), self._enable_cb, 10)
         self.cmd_pub = self.create_publisher(Twist, str(self.get_parameter("output_cmd_topic").value), 10)
@@ -147,6 +167,7 @@ class VisionFollowController(Node):
         self._enabled = bool(msg.data)
         if was_enabled and not self._enabled:
             self._last_event_time = 0.0
+            self._searching = False
             self.cmd_pub.publish(Twist())  # 全零 Twist = 刹停
             self.get_logger().info("Vision follow disabled")
         elif not was_enabled and self._enabled:
@@ -182,23 +203,39 @@ class VisionFollowController(Node):
         twist.linear.x = command.linear_x
         twist.angular.z = command.angular_z
         self._last_event_time = time.monotonic()
+        self._searching = False
         self.cmd_pub.publish(twist)
 
     def _watchdog(self) -> None:
-        """看门狗（10 Hz）：跟随中若事件断流超时，发零速刹停。
+        """看门狗（10 Hz）：跟随中若事件断流超时，刹停或慢转搜索。
 
         三个提前返回分别对应：未使能（本来就不该动）、尚未开始跟随
-        （_last_event_time 为 0，没有旧指令需要撤销）、事件仍然新鲜。
-        超时后把时间戳清零，这样零速只会发一次，不会每 0.1 秒重复刷屏。
+        （_last_event_time 为 0 且未在搜索）、事件仍然新鲜。
+        超时后进入搜索态：search_on_loss 时持续发慢转，否则发一次零速。
         """
         if not self._enabled:
             return
+        timeout = float(self.get_parameter("event_timeout_sec").value)
+        # 已在搜索：持续慢转，直到再次看到 confirmed 目标
+        if self._searching:
+            if bool(self.get_parameter("search_on_loss").value):
+                twist = Twist()
+                twist.angular.z = float(self.get_parameter("search_angular").value)
+                self.cmd_pub.publish(twist)
+            return
         if self._last_event_time <= 0.0:
             return
-        if time.monotonic() - self._last_event_time <= float(self.get_parameter("event_timeout_sec").value):
+        if time.monotonic() - self._last_event_time <= timeout:
             return
         self._last_event_time = 0.0
-        self.cmd_pub.publish(Twist())
+        if bool(self.get_parameter("search_on_loss").value):
+            self._searching = True
+            twist = Twist()
+            twist.angular.z = float(self.get_parameter("search_angular").value)
+            self.cmd_pub.publish(twist)
+            self.get_logger().info("Target lost: start in-place search rotate", throttle_duration_sec=2.0)
+        else:
+            self.cmd_pub.publish(Twist())
 
 
 def main(args=None) -> None:
