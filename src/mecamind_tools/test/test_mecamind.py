@@ -43,6 +43,7 @@ from mecamind_tools.voice_listen_node import (
     text_contains_wake_word,
 )
 from mecamind_tools.vision_follow_controller import compute_follow_command, should_publish_follow
+from mecamind_tools.follow_target_mover import profile_cycle_sec, profile_speed_at
 from mecamind_tools.world_geometry import load_world_geometry
 from mecamind_tools.world_profiles import three_room_blueprint, summarize_blueprint, validate_three_room_blueprint
 
@@ -233,6 +234,20 @@ def test_vision_follow_requires_enable_flag():
     assert not should_publish_follow(enabled=False, confirmed=True)
     assert not should_publish_follow(enabled=True, confirmed=False)
     assert should_publish_follow(enabled=True, confirmed=True)
+
+
+def test_follow_target_speed_profile_trapezoid():
+    kwargs = dict(
+        slow_mps=0.09, fast_mps=0.23, accel_mps2=0.18, hold_sec=5.0
+    )
+    cycle = profile_cycle_sec(**kwargs)
+    # 慢持 → 加速中点 → 快持 → 减速中点
+    assert abs(profile_speed_at(0.5, **kwargs) - 0.09) < 1e-6
+    assert abs(profile_speed_at(5.0 + (0.14 / 0.18) * 0.5, **kwargs) - 0.16) < 1e-3
+    assert abs(profile_speed_at(5.0 + 0.14 / 0.18 + 1.0, **kwargs) - 0.23) < 1e-6
+    mid_down = 5.0 + 0.14 / 0.18 + 5.0 + (0.14 / 0.18) * 0.5
+    assert abs(profile_speed_at(mid_down, **kwargs) - 0.16) < 1e-3
+    assert abs(profile_speed_at(cycle + 0.5, **kwargs) - 0.09) < 1e-6
 
 
 def test_named_goals_resolve_aliases_and_reject_unknown():

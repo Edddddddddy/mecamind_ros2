@@ -10,9 +10,14 @@
 直线若落在车头方向，红柱会顶到/穿进车身，观感差也难跟。
 改为车南方空地单向闭环：始终在视野前方，并与小车保持距离。
 
+【速度剖面（让小车「看得见加速」）】
+默认启用慢/快梯形剖面：慢段 → 加速 → 快段 → 减速 → 循环。
+小车跟随靠视觉距离误差，红柱需拉开足够速度差（约 2×）且加速约 1s，
+cmd_vel 才会明显抬升。剖面关闭时退回恒定 speed_mps。
+
 默认几何（可被 launch 参数覆盖）：
-  圆心约 (-2.3, -1.2)、半径约 1.1m 的六边形近似圆
-  小车 (-2.0, 1.95) 朝南旁观
+  圆心约 (-3.45, -1.8)、半径约 1.65m 的六边形近似圆
+  小车 (-3.0, 2.925) 朝南旁观
 
 【时序】
 1. startup_delay：等 Gazebo 服务起来；
@@ -22,7 +27,7 @@
 
 初学者重点阅读：
 1. closed_loop 如何把折线首尾闭合；
-2. _on_timer 里弧长 s 的推进与 set_pose；
+2. profile_speed_at 梯形速度与 _on_timer 弧长推进；
 3. _follow_enable_cb 上升沿为何要重置 _placed（重新摆位再开跑）。
 """
 
@@ -37,9 +42,55 @@ from typing import List, Optional, Sequence, Tuple
 
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, Float32
 
 Point = Tuple[float, float]
+
+
+def profile_speed_at(
+    t: float,
+    *,
+    slow_mps: float,
+    fast_mps: float,
+    accel_mps2: float,
+    hold_sec: float,
+) -> float:
+    """梯形速度剖面：慢持 → 加速 → 快持 → 减速，按周期循环。
+
+    t 为剖面时间（秒，从 0 起）。slow/fast 可颠倒，内部按大小区分。
+    """
+    lo = max(0.02, min(float(slow_mps), float(fast_mps)))
+    hi = max(0.02, max(float(slow_mps), float(fast_mps)))
+    hold = max(0.5, float(hold_sec))
+    accel = max(1e-3, float(accel_mps2))
+    ramp = max(0.05, (hi - lo) / accel)
+    cycle = 2.0 * hold + 2.0 * ramp
+    u = math.fmod(max(0.0, float(t)), cycle)
+    if u < hold:
+        return lo
+    if u < hold + ramp:
+        alpha = (u - hold) / ramp
+        return lo + alpha * (hi - lo)
+    if u < hold + ramp + hold:
+        return hi
+    alpha = (u - hold - ramp - hold) / ramp
+    return hi + alpha * (lo - hi)
+
+
+def profile_cycle_sec(
+    *,
+    slow_mps: float,
+    fast_mps: float,
+    accel_mps2: float,
+    hold_sec: float,
+) -> float:
+    """一个完整慢→快→慢周期的时长（秒）。"""
+    lo = max(0.02, min(float(slow_mps), float(fast_mps)))
+    hi = max(0.02, max(float(slow_mps), float(fast_mps)))
+    hold = max(0.5, float(hold_sec))
+    accel = max(1e-3, float(accel_mps2))
+    ramp = max(0.05, (hi - lo) / accel)
+    return 2.0 * hold + 2.0 * ramp
 
 
 def _parse_waypoints(raw: object) -> List[Point]:
@@ -103,7 +154,14 @@ class FollowTargetMover(Node):
         )
         self.declare_parameter("z", 0.38)
         self.declare_parameter("speed_mps", 0.14)
-        self.declare_parameter("rate_hz", 4.0)
+        # 慢/快梯形剖面：让小车跟随速度变化肉眼可见（关闭则用恒定 speed_mps）
+        self.declare_parameter("speed_profile_enable", True)
+        self.declare_parameter("speed_slow_mps", 0.09)
+        self.declare_parameter("speed_fast_mps", 0.23)
+        self.declare_parameter("speed_accel_mps2", 0.18)
+        self.declare_parameter("speed_hold_sec", 5.0)
+        self.declare_parameter("speed_topic", "/mecamind/follow_target_speed")
+        self.declare_parameter("rate_hz", 8.0)
         self.declare_parameter("enabled", True)
         self.declare_parameter("ping_pong", False)
         self.declare_parameter("closed_loop", True)
@@ -154,6 +212,7 @@ class FollowTargetMover(Node):
         )
         self._boot_wall = time.monotonic()
         self._last_tick_wall = self._boot_wall
+        self._profile_t = 0.0  # 速度剖面时间（仅在跑动时累加）
 
         self.create_subscription(
             Bool,
@@ -161,13 +220,30 @@ class FollowTargetMover(Node):
             self._follow_enable_cb,
             10,
         )
+        self._speed_pub = self.create_publisher(
+            Float32, str(self.get_parameter("speed_topic").value), 10
+        )
         rate = max(1.0, float(self.get_parameter("rate_hz").value))
         self._timer = self.create_timer(1.0 / rate, self._on_timer)
         mode = "绕圈" if bool(self.get_parameter("closed_loop").value) else "往返"
         pts = " -> ".join(f"({x:.2f},{y:.2f})" for x, y in self._waypoints)
+        if bool(self.get_parameter("speed_profile_enable").value):
+            slow = float(self.get_parameter("speed_slow_mps").value)
+            fast = float(self.get_parameter("speed_fast_mps").value)
+            accel = float(self.get_parameter("speed_accel_mps2").value)
+            hold = float(self.get_parameter("speed_hold_sec").value)
+            cycle = profile_cycle_sec(
+                slow_mps=slow, fast_mps=fast, accel_mps2=accel, hold_sec=hold
+            )
+            speed_desc = (
+                f"剖面 slow={slow:.2f}→fast={fast:.2f}m/s "
+                f"accel={accel:.2f}m/s² hold={hold:.1f}s cycle={cycle:.1f}s"
+            )
+        else:
+            speed_desc = f"恒速={float(self.get_parameter('speed_mps').value):.2f}m/s"
         self.get_logger().info(
             f"follow_target_mover {mode}: {pts} | "
-            f"len={self._path_len:.2f}m speed={float(self.get_parameter('speed_mps').value):.2f}m/s "
+            f"len={self._path_len:.2f}m {speed_desc} "
             f"| 等跟随使能={bool(self.get_parameter('wait_for_follow_enable').value)}"
         )
 
@@ -184,6 +260,7 @@ class FollowTargetMover(Node):
             self._follow_armed_wall = time.monotonic()
             self._s = 0.0
             self._direction = 1.0
+            self._profile_t = 0.0
             self._placed = False
             self._place_tries = 0
             self.get_logger().info("跟随已使能：摆好小车/红柱后开始绕圈")
@@ -224,7 +301,8 @@ class FollowTargetMover(Node):
         now = time.monotonic()
         dt = max(0.0, min(now - self._last_tick_wall, 0.5))
         self._last_tick_wall = now
-        speed = max(0.02, float(self.get_parameter("speed_mps").value))
+        speed = self._current_speed(dt)
+        self._speed_pub.publish(Float32(data=float(speed)))
         self._s += self._direction * speed * dt
 
         # ping_pong 仅在非闭环时生效；闭环用 fmod 单向循环
@@ -249,9 +327,23 @@ class FollowTargetMover(Node):
         )
         if ok:
             self.get_logger().info(
-                f"红柱 s={self._s:.2f}/{self._path_len:.2f} -> ({x:.2f},{y:.2f})",
-                throttle_duration_sec=4.0,
+                f"红柱 v={speed:.2f}m/s s={self._s:.2f}/{self._path_len:.2f} "
+                f"-> ({x:.2f},{y:.2f})",
+                throttle_duration_sec=2.0,
             )
+
+    def _current_speed(self, dt: float) -> float:
+        """按剖面或恒速取当前红柱线速度，并推进剖面时钟。"""
+        if bool(self.get_parameter("speed_profile_enable").value):
+            self._profile_t += dt
+            return profile_speed_at(
+                self._profile_t,
+                slow_mps=float(self.get_parameter("speed_slow_mps").value),
+                fast_mps=float(self.get_parameter("speed_fast_mps").value),
+                accel_mps2=float(self.get_parameter("speed_accel_mps2").value),
+                hold_sec=float(self.get_parameter("speed_hold_sec").value),
+            )
+        return max(0.02, float(self.get_parameter("speed_mps").value))
 
     def _place_start(self) -> None:
         """把小车/红柱摆到演示出生点；失败会重试若干次。"""
@@ -276,6 +368,7 @@ class FollowTargetMover(Node):
             self._placed = True
             self._s = 0.0
             self._direction = 1.0
+            self._profile_t = 0.0
             self._last_tick_wall = time.monotonic()
             rx = float(self.get_parameter("robot_x").value)
             ry = float(self.get_parameter("robot_y").value)

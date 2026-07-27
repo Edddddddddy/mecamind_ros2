@@ -31,6 +31,7 @@ detector(synthetic/camera/video) -> /mecamind/detections
   ros2 topic pub --once /mecamind/follow_enable std_msgs/msg/Bool '{data: true}'
 - Gazebo 课堂演示：红柱在放大后的客厅南侧空地单向绕圈（远离车头），小车朝南跟随；
   距离由 desired_width 调节；转向/距离均为 PID（Kp/Ki/Kd），过近会主动后退。
+  红柱默认慢(0.09)↔快(0.23)梯形变速，便于观察小车跟随加速。
 """
 
 from ament_index_python.packages import get_package_share_directory
@@ -130,8 +131,14 @@ def generate_launch_description():
                 )
             },
             {"z": 0.38},
+            # 恒速兜底；speed_profile_enable=true 时用慢/快梯形剖面
             {"speed_mps": 0.14},
-            {"rate_hz": 4.0},
+            {"speed_profile_enable": True},
+            {"speed_slow_mps": 0.09},
+            {"speed_fast_mps": 0.23},
+            {"speed_accel_mps2": 0.18},
+            {"speed_hold_sec": 5.0},
+            {"rate_hz": 8.0},
             {"startup_delay_sec": 6.0},
             {"wait_for_follow_enable": True},
             {"follow_start_delay_sec": 2.0},
