@@ -34,6 +34,10 @@ from std_msgs.msg import String
 from .aliyun_clients import AliyunLlmClient, AliyunTaskPlan
 
 
+CONFIRM_WORDS = ("确认", "确定", "好的", "可以", "执行", "yes", "confirm", "ok", "okay")
+REJECT_WORDS = ("不要", "否", "算了", "拒绝", "no", "reject")
+
+
 @dataclass(frozen=True)
 class TaskCommand:
     """结构化任务命令：全系统统一的"任务"表达格式。
@@ -41,7 +45,7 @@ class TaskCommand:
     与 aliyun_clients.AliyunTaskPlan 字段一致，但属于本模块自己的类型——
     刻意做这层转换是为了让下游模块只依赖 TaskCommand，不感知
     "命令是规则解析的还是 LLM 解析的"。字段含义：
-    - intent: stop/cancel/patrol/follow/mapping/navigate/unknown；
+    - intent: stop/cancel/confirm/patrol/follow/mapping/navigate/unknown；
     - target: 导航目标名（房间/路点）；
     - requires_confirmation: True 表示指令含糊，执行前需要用户确认；
     - reply: 播报给用户听的回复语。
@@ -74,24 +78,35 @@ def parse_task_command(text: str) -> TaskCommand:
       把原话放进 target 留给人工确认——"听不懂就问"比"猜着执行"安全。
     """
     normalized = text.strip().lower()
+    raw = text.strip()
     if not normalized:
-        return TaskCommand("unknown", requires_confirmation=True, reply="I did not hear a command.")
+        return TaskCommand("unknown", requires_confirmation=True, reply="没听清，请再说一遍。")
     if any(word in normalized for word in ("stop", "停", "急停", "停车")):
-        return TaskCommand("stop", reply="Stopping.")
-    if any(word in normalized for word in ("cancel", "取消")):
-        return TaskCommand("cancel", reply="Canceled.")
+        return TaskCommand("stop", reply="好的，正在停止。")
+    if any(word in normalized for word in ("cancel", "取消")) or any(
+        word in normalized for word in REJECT_WORDS
+    ):
+        return TaskCommand("cancel", reply="好的，已取消。")
+    # 短确认语：仅在整句很短时命中，避免「确认去卧室」误判为纯确认。
+    if len(normalized) <= 6 and any(word in normalized for word in CONFIRM_WORDS):
+        return TaskCommand("confirm", reply="好的，开始执行。")
     if any(word in normalized for word in ("patrol", "巡逻")):
-        return TaskCommand("patrol", reply="Starting patrol.")
+        return TaskCommand("patrol", reply="好的，开始巡逻。")
     if any(word in normalized for word in ("follow", "跟随")):
-        return TaskCommand("follow", reply="Following target.")
+        return TaskCommand("follow", reply="好的，开始跟随。")
     if any(word in normalized for word in ("map", "建图")):
-        return TaskCommand("mapping", reply="Starting mapping.")
+        return TaskCommand("mapping", reply="好的，开始建图。")
 
     match = re.search(r"(?:go to|navigate to|去|导航到)\s*([\w\u4e00-\u9fff_-]+)", normalized)
     if match:
         target = match.group(1)
-        return TaskCommand("navigate", target=target, reply=f"Navigating to {target}.")
-    return TaskCommand("unknown", target=text.strip(), requires_confirmation=True, reply="Please confirm the task.")
+        return TaskCommand("navigate", target=target, reply=f"好的，正在前往{target}。")
+    return TaskCommand(
+        "unknown",
+        target=raw,
+        requires_confirmation=True,
+        reply=f"请确认是否执行：{raw}？说确认或取消。",
+    )
 
 
 def task_command_from_aliyun_plan(plan: AliyunTaskPlan) -> TaskCommand:
@@ -100,11 +115,16 @@ def task_command_from_aliyun_plan(plan: AliyunTaskPlan) -> TaskCommand:
     纯字段搬运，存在的意义是隔离依赖方向：下游只 import 本模块的
     TaskCommand，将来换掉 LLM 供应商时只需要改这一个转换函数。
     """
+    reply = plan.reply
+    if plan.requires_confirmation and plan.intent not in {"stop", "cancel", "confirm"}:
+        if "确认" not in reply:
+            label = plan.intent if not plan.target else f"{plan.intent} {plan.target}"
+            reply = f"请确认是否执行：{label}？说确认或取消。"
     return TaskCommand(
         intent=plan.intent,
         target=plan.target,
         requires_confirmation=plan.requires_confirmation,
-        reply=plan.reply,
+        reply=reply,
     )
 
 
@@ -159,14 +179,27 @@ class TaskSchedulerNode(Node):
         降级只记 warn 日志——网络抖动导致的 LLM 失败是预期内情况，
         不应该让整条语音链路瘫痪。
         """
+        # 确认/取消短指令永远走规则，避免 LLM 延迟打断确认闭环。
+        quick = parse_task_command(text)
+        if quick.intent in {"confirm", "cancel", "stop"}:
+            return quick
+
         provider = str(self.get_parameter("provider").value).strip().lower()
         if provider not in ("aliyun", "llm"):
-            return parse_task_command(text)
+            return quick
         try:
             return task_command_from_aliyun_plan(self.llm_client.parse_task(text))
         except Exception as exc:  # noqa: BLE001
             self.get_logger().warn(f"Aliyun LLM task parsing failed, falling back to rules: {exc}")
-            return parse_task_command(text)
+            fallback = parse_task_command(text)
+            if fallback.reply and "本地" not in fallback.reply:
+                fallback = TaskCommand(
+                    intent=fallback.intent,
+                    target=fallback.target,
+                    requires_confirmation=fallback.requires_confirmation,
+                    reply=f"已改用本地理解。{fallback.reply}",
+                )
+            return fallback
 
 
 def main(args=None) -> None:

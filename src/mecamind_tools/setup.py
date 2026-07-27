@@ -63,8 +63,11 @@ setup(
             "mecamind_boundary_revisit_planner = mecamind_tools.boundary_revisit_planner:main",
             "mecamind_map_asset_manager = mecamind_tools.map_asset_manager:main",
             "mecamind_aliyun_asr_file = mecamind_tools.aliyun_speech_nodes:asr_main",
+            "mecamind_aliyun_asr_stream = mecamind_tools.aliyun_speech_nodes:asr_stream_main",
             "mecamind_microphone_recorder = mecamind_tools.aliyun_speech_nodes:microphone_main",
             "mecamind_aliyun_tts = mecamind_tools.aliyun_speech_nodes:tts_main",
+            "mecamind_tts_playback = mecamind_tools.aliyun_speech_nodes:tts_playback_main",
+            "mecamind_voice_listen = mecamind_tools.voice_listen_node:main",
         ],
     },
 )

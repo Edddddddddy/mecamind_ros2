@@ -12,9 +12,12 @@ from mecamind_tools.aliyun_clients import (
 )
 from mecamind_tools.aliyun_speech_nodes import (
     build_microphone_record_command,
+    build_playback_command,
+    classify_voice_failure,
     parse_audio_file_payload,
     record_microphone_clip,
     select_microphone_backend,
+    select_playback_backend,
 )
 from mecamind_tools.boundary_revisit_planner import build_revisit_route
 from mecamind_tools.mode_profiles import build_mode_profile, render_profile_summary
@@ -34,6 +37,11 @@ from mecamind_tools.mission_executor import (
     resolve_named_goal,
 )
 from mecamind_tools.task_scheduler import parse_task_command
+from mecamind_tools.voice_listen_node import (
+    pcm_rms,
+    strip_wake_words,
+    text_contains_wake_word,
+)
 from mecamind_tools.vision_follow_controller import compute_follow_command, should_publish_follow
 from mecamind_tools.world_geometry import load_world_geometry
 from mecamind_tools.world_profiles import three_room_blueprint, summarize_blueprint, validate_three_room_blueprint
@@ -194,10 +202,31 @@ def test_perception_filter_selects_confirmable_target():
 
 
 def test_vision_follow_command_turns_toward_target():
-    command = compute_follow_command(cx=0.70, target_width=0.10)
+    command = compute_follow_command(cx=0.70, target_width=0.10, dt=0.1)
     assert command.active
     assert command.angular_z < 0.0
     assert command.linear_x > 0.0
+
+
+def test_vision_follow_pid_integral_grows_on_steady_error():
+    state_ang = None
+    state_lin = None
+    last = None
+    for _ in range(5):
+        last = compute_follow_command(
+            cx=0.70,
+            target_width=0.10,
+            dt=0.1,
+            ki_angular=0.2,
+            ki_linear=0.1,
+            angular_state=state_ang,
+            linear_state=state_lin,
+        )
+        state_ang = last.angular_state
+        state_lin = last.linear_state
+    assert last is not None
+    assert abs(last.angular_state.integral) > 0.0
+    assert abs(last.linear_state.integral) > 0.0
 
 
 def test_vision_follow_requires_enable_flag():
@@ -209,8 +238,8 @@ def test_vision_follow_requires_enable_flag():
 def test_named_goals_resolve_aliases_and_reject_unknown():
     goals = load_named_goals(str(PKG / "config" / "mecamind_named_goals.yaml"))
     assert "bedroom" in goals
-    assert resolve_named_goal(goals, "bedroom")["x"] == 2.5
-    assert resolve_named_goal(goals, "卧室")["x"] == 2.5
+    assert resolve_named_goal(goals, "bedroom")["x"] == 3.75
+    assert resolve_named_goal(goals, "卧室")["x"] == 3.75
     assert resolve_named_goal(goals, "nowhere") is None
 
 
@@ -238,6 +267,35 @@ def test_task_scheduler_parses_basic_voice_intents():
     nav = parse_task_command("go to bedroom")
     assert nav.intent == "navigate"
     assert nav.target == "bedroom"
+    confirm = parse_task_command("确认")
+    assert confirm.intent == "confirm"
+    cancel = parse_task_command("取消")
+    assert cancel.intent == "cancel"
+    unknown = parse_task_command("随便做点什么")
+    assert unknown.intent == "unknown"
+    assert unknown.requires_confirmation
+    assert "确认" in unknown.reply
+
+
+def test_wake_word_helpers_and_pcm_energy():
+    assert text_contains_wake_word("小智去卧室", ["小智", "mecamind"])
+    assert strip_wake_words("小智，去卧室", ["小智"]) == "去卧室"
+    # 静音帧能量应为 0
+    assert pcm_rms(b"\x00\x00" * 80) == 0.0
+
+
+def test_voice_failure_classification_and_playback_command():
+    code, reply = classify_voice_failure(RuntimeError("Aliyun ASR returned no recognized text"))
+    assert code == "asr_empty"
+    assert "再说" in reply
+    backend, executable = select_playback_backend(
+        "ffplay",
+        which={"ffplay": "/usr/bin/ffplay"}.get,
+    )
+    assert backend == "ffplay"
+    command = build_playback_command(backend, executable, "/tmp/a.mp3")
+    assert command[0] == "/usr/bin/ffplay"
+    assert command[-1] == "/tmp/a.mp3"
 
 
 def test_aliyun_task_payload_parser_accepts_json_fences():

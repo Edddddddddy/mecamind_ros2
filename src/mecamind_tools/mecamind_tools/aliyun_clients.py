@@ -177,7 +177,7 @@ def parse_task_plan_payload(payload: str, fallback_text: str = "") -> AliyunTask
     if not isinstance(data, dict):
         raise ValueError("LLM task payload must be a JSON object")
     intent = str(data.get("intent", "unknown")).strip().lower() or "unknown"
-    allowed = {"stop", "cancel", "patrol", "follow", "mapping", "navigate", "unknown"}
+    allowed = {"stop", "cancel", "confirm", "patrol", "follow", "mapping", "navigate", "unknown"}
     if intent not in allowed:
         intent = "unknown"
     return AliyunTaskPlan(
@@ -198,7 +198,7 @@ def build_task_parser_messages(text: str) -> list[dict[str, str]]:
     system = (
         "You are the task parser for a ROS 2 indoor mobile robot. "
         "Convert the user's command into strict JSON only. "
-        "Allowed intents are stop, cancel, patrol, follow, mapping, navigate, unknown. "
+        "Allowed intents are stop, cancel, confirm, patrol, follow, mapping, navigate, unknown. "
         "Use target for room or waypoint names. "
         "Set requires_confirmation true when the command is ambiguous or risky. "
         "The JSON schema is: "
@@ -416,3 +416,139 @@ class AliyunSpeechClient:
             raise RuntimeError("Aliyun TTS returned empty audio")
         path.write_bytes(audio)
         return path
+
+    def open_streaming_recognition(
+        self,
+        language_hints: Iterable[str] | None = ("zh", "en"),
+        on_partial: Callable[[str], None] | None = None,
+        on_final: Callable[[str], None] | None = None,
+        on_error: Callable[[str], None] | None = None,
+    ) -> "AliyunStreamingRecognition":
+        """打开双向流式 ASR 会话（PCM 帧推送，回调返回部分/最终结果）。"""
+        return AliyunStreamingRecognition(
+            api_key_env=self.api_key_env,
+            websocket_url=self.websocket_url,
+            asr_model=self.asr_model,
+            sample_rate=self.sample_rate,
+            language_hints=list(language_hints or []),
+            on_partial=on_partial,
+            on_final=on_final,
+            on_error=on_error,
+        )
+
+
+class AliyunStreamingRecognition:
+    """DashScope Recognition 双向流式封装：start → send_audio_frame → stop。"""
+
+    def __init__(
+        self,
+        api_key_env: str = "DASHSCOPE_API_KEY",
+        websocket_url: str = "",
+        asr_model: str = "paraformer-realtime-v2",
+        sample_rate: int = 16000,
+        language_hints: list[str] | None = None,
+        on_partial: Callable[[str], None] | None = None,
+        on_final: Callable[[str], None] | None = None,
+        on_error: Callable[[str], None] | None = None,
+    ) -> None:
+        self.api_key_env = api_key_env
+        self.websocket_url = websocket_url
+        self.asr_model = asr_model
+        self.sample_rate = sample_rate
+        self.language_hints = language_hints or ["zh", "en"]
+        self.on_partial = on_partial
+        self.on_final = on_final
+        self.on_error = on_error
+        self._recognition = None
+        self._final_text = ""
+        self._error = ""
+        self._started = False
+
+    @property
+    def final_text(self) -> str:
+        return self._final_text
+
+    @property
+    def error(self) -> str:
+        return self._error
+
+    def start(self) -> None:
+        """建立 WebSocket 流式识别会话。"""
+        import threading
+
+        _set_dashscope_runtime(self.api_key_env, self.websocket_url)
+        from dashscope.audio.asr import Recognition, RecognitionCallback  # type: ignore
+
+        owner = self
+
+        class _Callback(RecognitionCallback):  # type: ignore[misc,valid-type]
+            def on_open(self) -> None:
+                return None
+
+            def on_close(self) -> None:
+                return None
+
+            def on_complete(self) -> None:
+                return None
+
+            def on_error(self, result: Any) -> None:
+                message = str(getattr(result, "message", result) or "streaming ASR error")
+                owner._error = message
+                if owner.on_error:
+                    owner.on_error(message)
+
+            def on_event(self, result: Any) -> None:
+                try:
+                    sentence = result.get_sentence()
+                except Exception:  # noqa: BLE001
+                    return
+                text = extract_recognition_text(sentence)
+                if not text:
+                    return
+                # request_status / end 标记因 SDK 版本而异，尽量兼容。
+                is_end = False
+                try:
+                    is_end = bool(result.is_sentence_end(sentence))
+                except Exception:  # noqa: BLE001
+                    if isinstance(sentence, dict):
+                        is_end = bool(sentence.get("end_time")) and sentence.get(
+                            "sentence_end", True
+                        )
+                if is_end:
+                    owner._final_text = text
+                    if owner.on_final:
+                        owner.on_final(text)
+                else:
+                    if owner.on_partial:
+                        owner.on_partial(text)
+
+        self._recognition = Recognition(
+            model=self.asr_model,
+            format="pcm",
+            sample_rate=self.sample_rate,
+            language_hints=self.language_hints,
+            callback=_Callback(),
+        )
+        self._recognition.start()
+        self._started = True
+        # 给握手一点时间，避免首帧丢失。
+        threading.Event().wait(0.05)
+
+    def send_audio_frame(self, pcm: bytes) -> None:
+        if not self._started or self._recognition is None:
+            raise RuntimeError("streaming recognition not started")
+        if not pcm:
+            return
+        self._recognition.send_audio_frame(pcm)
+
+    def stop(self) -> str:
+        """结束会话并返回最终文本（可能为空）。"""
+        if self._recognition is not None and self._started:
+            try:
+                self._recognition.stop()
+            except Exception as exc:  # noqa: BLE001
+                self._error = self._error or str(exc)
+                if self.on_error:
+                    self.on_error(str(exc))
+        self._started = False
+        return self._final_text

@@ -1,15 +1,7 @@
 <?xml version="1.0" ?>
 <!--
-  三室户教学世界（轻量仿真版）。
-
-  【谁在用它】mecamind_simulator_node（轻量 2D 仿真器）解析本文件
-  里每个 link 的 pose + box 尺寸，得到一组 2D 矩形障碍，用来做激光
-  射线求交和碰撞检查。它只读几何，不需要 Gazebo 运行。
-  【一致性要求】墙体/家具的坐标尺寸与 Gazebo 版
-  mecamind_gazebo/worlds/three_room_house.sdf 保持一致，
-  两个后端才会"看到"同一个环境。
-  【布局】7.8m x 5.9m 外墙 + 两道隔断墙分出客厅/卧室/门厅，
-  外加桌子、柜子、方柱三件障碍物。
+  三室户教学世界（轻量仿真版，约 11.7m x 8.85m，相对原版约 1.5 倍）。
+  几何与 Gazebo three_room_house.sdf 保持一致。
 -->
 <sdf version="1.6">
   <world name="three_room_house">
@@ -19,64 +11,52 @@
     <include>
       <uri>model://ground_plane</uri>
     </include>
-
-    <!-- 每个 link 一面墙/一件家具：pose 是中心点坐标（米），
-         box size 是长宽高。轻量仿真只取 x/y 平面投影。 -->
     <model name="house_shell">
       <static>true</static>
-
       <link name="north_wall">
-        <pose>0 2.95 0.4 0 0 0</pose>
-        <collision name="collision"><geometry><box><size>7.8 0.12 0.8</size></box></geometry></collision>
-        <visual name="visual"><geometry><box><size>7.8 0.12 0.8</size></box></geometry></visual>
+        <pose>0 4.425 0.4 0 0 0</pose>
+        <collision name="collision"><geometry><box><size>11.7 0.12 0.8</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>11.7 0.12 0.8</size></box></geometry></visual>
       </link>
-
       <link name="south_wall">
-        <pose>0 -2.95 0.4 0 0 0</pose>
-        <collision name="collision"><geometry><box><size>7.8 0.12 0.8</size></box></geometry></collision>
-        <visual name="visual"><geometry><box><size>7.8 0.12 0.8</size></box></geometry></visual>
+        <pose>0 -4.425 0.4 0 0 0</pose>
+        <collision name="collision"><geometry><box><size>11.7 0.12 0.8</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>11.7 0.12 0.8</size></box></geometry></visual>
       </link>
-
       <link name="west_wall">
-        <pose>-3.9 0 0.4 0 0 0</pose>
-        <collision name="collision"><geometry><box><size>0.12 5.9 0.8</size></box></geometry></collision>
-        <visual name="visual"><geometry><box><size>0.12 5.9 0.8</size></box></geometry></visual>
+        <pose>-5.85 0 0.4 0 0 0</pose>
+        <collision name="collision"><geometry><box><size>0.12 8.85 0.8</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.12 8.85 0.8</size></box></geometry></visual>
       </link>
-
       <link name="east_wall">
-        <pose>3.9 0 0.4 0 0 0</pose>
-        <collision name="collision"><geometry><box><size>0.12 5.9 0.8</size></box></geometry></collision>
-        <visual name="visual"><geometry><box><size>0.12 5.9 0.8</size></box></geometry></visual>
+        <pose>5.85 0 0.4 0 0 0</pose>
+        <collision name="collision"><geometry><box><size>0.12 8.85 0.8</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.12 8.85 0.8</size></box></geometry></visual>
       </link>
-
       <link name="hall_divider_left">
-        <pose>-1.2 1.0 0.4 0 0 0</pose>
-        <collision name="collision"><geometry><box><size>0.12 3.2 0.8</size></box></geometry></collision>
-        <visual name="visual"><geometry><box><size>0.12 3.2 0.8</size></box></geometry></visual>
+        <pose>-1.8 1.5 0.4 0 0 0</pose>
+        <collision name="collision"><geometry><box><size>0.12 4.8 0.8</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.12 4.8 0.8</size></box></geometry></visual>
       </link>
-
       <link name="hall_divider_right">
-        <pose>1.4 -0.4 0.4 0 0 0</pose>
-        <collision name="collision"><geometry><box><size>0.12 3.2 0.8</size></box></geometry></collision>
-        <visual name="visual"><geometry><box><size>0.12 3.2 0.8</size></box></geometry></visual>
+        <pose>2.1 -0.6 0.4 0 0 0</pose>
+        <collision name="collision"><geometry><box><size>0.12 4.8 0.8</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.12 4.8 0.8</size></box></geometry></visual>
       </link>
-
       <link name="table">
-        <pose>-2.6 1.5 0.18 0 0 0</pose>
-        <collision name="collision"><geometry><box><size>0.8 0.8 0.36</size></box></geometry></collision>
-        <visual name="visual"><geometry><box><size>0.8 0.8 0.36</size></box></geometry></visual>
+        <pose>-3.9 2.25 0.18 0 0 0</pose>
+        <collision name="collision"><geometry><box><size>1.0 1.0 0.36</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>1.0 1.0 0.36</size></box></geometry></visual>
       </link>
-
       <link name="cabinet">
-        <pose>2.7 -1.8 0.25 0 0 0</pose>
-        <collision name="collision"><geometry><box><size>0.6 1.0 0.5</size></box></geometry></collision>
-        <visual name="visual"><geometry><box><size>0.6 1.0 0.5</size></box></geometry></visual>
+        <pose>4.05 -2.7 0.25 0 0 0</pose>
+        <collision name="collision"><geometry><box><size>0.75 1.2 0.5</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.75 1.2 0.5</size></box></geometry></visual>
       </link>
-
       <link name="pillar">
-        <pose>0.5 -2.8 0.4 0 0 0</pose>
-        <collision name="collision"><geometry><box><size>0.4 0.4 0.8</size></box></geometry></collision>
-        <visual name="visual"><geometry><box><size>0.4 0.4 0.8</size></box></geometry></visual>
+        <pose>0.75 -3.75 0.4 0 0 0</pose>
+        <collision name="collision"><geometry><box><size>0.45 0.45 0.8</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.45 0.45 0.8</size></box></geometry></visual>
       </link>
     </model>
   </world>

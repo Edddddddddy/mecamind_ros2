@@ -217,6 +217,8 @@ class MissionExecutorNode(Node):
         self._pending_send: Optional[Dict[str, Any]] = None  # 排队等待发送的目标
         # 序列号：识别并作废"过期的"异步回调（详见 _cancel_nav 的注释）。
         self._goal_serial = 0
+        # 需要用户口头确认时缓存的完整 task_command 载荷。
+        self._pending_confirm: Optional[Dict[str, Any]] = None
 
         # ---- ROS 通信接口 ----
         action_name = str(self.get_parameter("navigate_action").value)
@@ -233,6 +235,7 @@ class MissionExecutorNode(Node):
         self.cmd_pub = self.create_publisher(
             Twist, str(self.get_parameter("cmd_vel_topic").value), 10
         )
+        self.reply_pub = self.create_publisher(String, "/mecamind/robot_reply", 10)
         self.create_subscription(
             String,
             str(self.get_parameter("task_command_topic").value),
@@ -279,35 +282,17 @@ class MissionExecutorNode(Node):
             self._target = target
         self._publish_state()
 
-    def _task_cb(self, msg: String) -> None:
-        """任务指令入口：解析 JSON，按 intent 驱动状态机迁移。
-
-        这是整个节点的"大脑"。处理顺序刻意安排为：
-        1. JSON 解析失败 -> 只告警不崩溃（外部输入永远不可信）；
-        2. requires_confirmation 为真且不是停止类指令 -> 挂起等确认，
-           不执行任何动作（安全第一：需要人确认的动作绝不自动执行）；
-        3. 根据 intent 映射出目标模式，进入对应的 _enter_xxx / _stop_all。
-        """
-        try:
-            data = json.loads(msg.data)
-        except Exception as exc:  # noqa: BLE001
-            self.get_logger().warn(f"Invalid task_command JSON: {exc}")
+    def _publish_reply(self, text: str) -> None:
+        if not text:
             return
-        # intent 统一转小写去空格，容忍上游大小写不规范。
-        intent = str(data.get("intent", "unknown")).strip().lower()
-        target = str(data.get("target", "")).strip()
-        requires_confirmation = bool(data.get("requires_confirmation", False))
-        self._last_intent = intent
-        self._target = target
+        msg = String()
+        msg.data = text
+        self.reply_pub.publish(msg)
 
-        # 需要确认的指令先挂起；但 stop/cancel 例外——停止永远无条件执行。
-        if requires_confirmation and intent not in {"stop", "cancel"}:
-            self._set_state("idle", "awaiting_confirmation", target)
-            return
-
+    def _dispatch_intent(self, intent: str, target: str) -> None:
+        """按 intent 进入对应模式（确认通过后的真正执行入口）。"""
         mode = next_mission_mode(intent)
         if mode == "idle":
-            # detail 区分是用户主动 stop 还是 cancel，便于验收脚本断言。
             self._stop_all("stopped" if intent == "stop" else "canceled")
             return
         if mode == "follow":
@@ -319,9 +304,67 @@ class MissionExecutorNode(Node):
         if mode == "patrol":
             self._enter_patrol()
             return
-        # 理论上走不到这里（next_mission_mode 未知 intent 会返回 idle），
-        # 留着是防御式兜底。
         self._set_state("idle", f"unsupported_intent:{intent}", target)
+
+    def _task_cb(self, msg: String) -> None:
+        """任务指令入口：解析 JSON，按 intent 驱动状态机迁移。
+
+        这是整个节点的"大脑"。处理顺序刻意安排为：
+        1. JSON 解析失败 -> 只告警不崩溃（外部输入永远不可信）；
+        2. 若正在 awaiting_confirmation：confirm 执行挂起任务，cancel/stop 清空；
+        3. requires_confirmation 为真且不是停止类指令 -> 挂起等确认；
+        4. 根据 intent 映射出目标模式，进入对应的 _enter_xxx / _stop_all。
+        """
+        try:
+            data = json.loads(msg.data)
+        except Exception as exc:  # noqa: BLE001
+            self.get_logger().warn(f"Invalid task_command JSON: {exc}")
+            return
+        # intent 统一转小写去空格，容忍上游大小写不规范。
+        intent = str(data.get("intent", "unknown")).strip().lower()
+        target = str(data.get("target", "")).strip()
+        requires_confirmation = bool(data.get("requires_confirmation", False))
+        reply = str(data.get("reply", "")).strip()
+        self._last_intent = intent
+        self._target = target
+
+        # 确认闭环：挂起中优先处理 confirm / cancel / stop。
+        if self._pending_confirm is not None or self._detail == "awaiting_confirmation":
+            if intent == "confirm":
+                pending = dict(self._pending_confirm or {})
+                self._pending_confirm = None
+                pending_intent = str(pending.get("intent", "unknown")).strip().lower()
+                pending_target = str(pending.get("target", "")).strip()
+                self._last_intent = pending_intent
+                self._target = pending_target
+                self._dispatch_intent(pending_intent, pending_target)
+                return
+            if intent in {"cancel", "stop"}:
+                self._pending_confirm = None
+                self._stop_all("stopped" if intent == "stop" else "canceled")
+                return
+            # 挂起期间收到其他指令：提示先确认，不覆盖 pending。
+            self._publish_reply("请先说确认或取消。")
+            self._set_state("idle", "awaiting_confirmation", self._target)
+            return
+
+        # 需要确认的指令先挂起；但 stop/cancel 例外——停止永远无条件执行。
+        if requires_confirmation and intent not in {"stop", "cancel", "confirm"}:
+            self._pending_confirm = {
+                "intent": intent,
+                "target": target,
+                "reply": reply,
+            }
+            # 确认话术由 task_scheduler 的 reply 经 TTS 播出，这里不重复发。
+            self._set_state("idle", "awaiting_confirmation", target)
+            return
+
+        if intent == "confirm":
+            self._publish_reply("当前没有待确认的任务。")
+            self._set_state("idle", "no_pending_confirm", target)
+            return
+
+        self._dispatch_intent(intent, target)
 
     def _stop_all(self, detail: str) -> None:
         """停止一切活动：关跟随、取消导航、发零速度、清空排队与巡航进度。
@@ -329,6 +372,7 @@ class MissionExecutorNode(Node):
         发一帧零 Twist 是为了让机器人立即减速停下，而不是等上游
         速度指令自然超时。
         """
+        self._pending_confirm = None
         self._publish_follow(False)
         self._cancel_nav()
         self.cmd_pub.publish(Twist())

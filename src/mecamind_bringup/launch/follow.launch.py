@@ -29,8 +29,8 @@ detector(synthetic/camera/video) -> /mecamind/detections
 【上课操作提示】
 - 约 10s 后自动打开跟随；也可手动：
   ros2 topic pub --once /mecamind/follow_enable std_msgs/msg/Bool '{data: true}'
-- Gazebo 课堂演示：红柱在客厅南侧空地单向绕圈（远离车头），小车朝南跟随；
-  距离由 desired_width 调节，过近会主动后退。
+- Gazebo 课堂演示：红柱在放大后的客厅南侧空地单向绕圈（远离车头），小车朝南跟随；
+  距离由 desired_width 调节；转向/距离均为 PID（Kp/Ki/Kd），过近会主动后退。
 """
 
 from ament_index_python.packages import get_package_share_directory
@@ -122,15 +122,15 @@ def generate_launch_description():
             {"use_sim_time": True},
             {"world_name": "three_room_house"},
             {"model_name": "follow_target"},
-            # 圆心(-2.3,-1.2) r≈1.1 六边形；比原 0.75 圈更大，仍避开小车
+            # 圆心约 (-3.45,-1.8) r≈1.65 六边形（1.5x 放大后更大活动范围）
             {
                 "waypoints_xy": (
-                    "[-2.30,-0.10, -3.25,-0.65, -2.85,-2.15, "
-                    "-2.30,-2.30, -1.75,-2.15, -1.35,-0.65]"
+                    "[-3.45,-0.15, -4.875,-0.975, -4.275,-3.225, "
+                    "-3.45,-3.45, -2.625,-3.225, -2.025,-0.975]"
                 )
             },
             {"z": 0.38},
-            {"speed_mps": 0.12},
+            {"speed_mps": 0.14},
             {"rate_hz": 4.0},
             {"startup_delay_sec": 6.0},
             {"wait_for_follow_enable": True},
@@ -138,13 +138,13 @@ def generate_launch_description():
             {"ping_pong": False},
             {"closed_loop": True},
             {"reposition_robot": True},
-            {"robot_x": -2.0},
-            {"robot_y": 1.95},
+            {"robot_x": -3.0},
+            {"robot_y": 2.925},
             {"robot_yaw": -1.5708},
         ],
     )
 
-    # ---- 跟随控制器 ----
+    # ---- 跟随控制器（完整 PID）----
     follow_controller = Node(
         package="mecamind_tools",
         executable="mecamind_vision_follow_controller",
@@ -152,12 +152,18 @@ def generate_launch_description():
         output="screen",
         parameters=[
             {"output_cmd_topic": "/cmd_vel_follow"},
-            # 比 0.28 再近约 1/3（画面更宽），过近仍大力后退防穿模
-            {"desired_width": 0.36},
-            {"max_linear": 0.24},
+            # 画面目标宽度目标：越大跟得越近（0.36→0.50 明显贴进）
+            {"desired_width": 0.50},
+            {"max_linear": 0.28},
             {"max_angular": 1.0},
-            {"kp_linear": 1.15},
+            {"kp_linear": 1.35},
+            {"ki_linear": 0.08},
+            {"kd_linear": 0.05},
             {"kp_angular": 2.2},
+            {"ki_angular": 0.15},
+            {"kd_angular": 0.08},
+            {"i_limit_angular": 0.45},
+            {"i_limit_linear": 0.30},
             {"search_on_loss": True},
             {"search_angular": 0.45},
         ],

@@ -2,8 +2,10 @@
 #
 # 【作用】把"卧室""客厅"这类人类语言映射成地图坐标，这样发指令
 # 只需 {"intent":"navigate","target":"bedroom"}，不用报坐标。
-# 坐标与 mecamind_patrol_waypoints.yaml 及三室户世界保持一致。
+# 坐标与放大后的三室户世界（约 11.7m x 8.85m）及巡航路点保持一致。
 # yaw 是到达后的朝向（弧度，0 = 朝 x 轴正方向）。
+#
+# 注意：房间放大后需重新建图；旧地图坐标不再适用。
 
 # 第二课的地图从原点开始建，map 坐标系与世界坐标系近似重合，
 # 因此初始位姿与两个后端统一的出生点 (0, 0) 一致。
@@ -16,21 +18,21 @@ initial_pose:
 goals:
   hall_entry:
     frame_id: map
-    x: -2.4
-    y: -1.8
+    x: -3.6
+    y: -2.7
     yaw: 0.0
   living_room:
     frame_id: map
     x: 0.0
-    y: 0.4
+    y: 0.6
     yaw: 0.0
   kitchen:
     frame_id: map
-    x: -0.5
-    y: -1.2
+    x: -0.75
+    y: -1.8
     yaw: 0.0
   bedroom:
     frame_id: map
-    x: 2.5
-    y: 0.6
+    x: 3.75
+    y: 0.9
     yaw: 0.0

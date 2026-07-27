@@ -358,6 +358,70 @@ MECAMIND_CP5_BACKEND=gazebo bash scripts/test_cp5.sh
 
 成功标志：`MECAMIND_CP5_OK`，报告写入 `maps/mecamind_cp5_report.json`。
 
+说明：三室户世界已放大到约 **11.7m × 8.85m**（约 1.5 倍），跟随控制器为完整 **PID**。
+若你仍使用旧地图做导航，请用第二节课流程**重新建图**；命名目标/巡航点已按新尺寸更新。
+
+## 第六次课：语音产品核心（唤醒 / 流式 ASR / TTS 播放）
+
+### 密钥（不要提交 git）
+
+复制模板并填入 DashScope API Key：
+
+```bash
+cp src/mecamind_tools/config/mecamind_aliyun.example.yaml \
+   src/mecamind_tools/config/mecamind_aliyun.local.yaml
+# 编辑 local 文件，写入 aliyun.api_key
+# 也可：export DASHSCOPE_API_KEY=sk-...
+```
+
+`*.local.yaml` 已在 `.gitignore` 中，**禁止**把真实密钥写进 README / launch / example。
+
+云端 ASR/TTS 依赖：
+
+```bash
+pip install --user --break-system-packages -U dashscope
+```
+
+### 启动连续听（默认）
+
+```bash
+cd ~/mecamind_ros2
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+ros2 launch mecamind_tools mecamind_aliyun_voice.launch.py
+```
+
+默认能力：
+
+- 关键词唤醒：`小智` / `mecamind` / `美卡`（参数 `wake_words`）
+- 能量门限连续听 + 流式 ASR（`paraformer-realtime-v2`）
+- 任务解析（默认阿里云 LLM，失败自动降级规则）
+- TTS 合成 + 本机自动播放（`ffplay` / `paplay` / `aplay`）
+- 模糊指令会先请你「确认 / 取消」
+
+按键说话兜底（无唤醒）：
+
+```bash
+ros2 launch mecamind_tools mecamind_aliyun_voice.launch.py listen_mode:=ptt
+ros2 service call /mecamind/record_voice std_srvs/srv/Trigger
+```
+
+无麦克风时可用文字路径：
+
+```bash
+ros2 topic pub --once /mecamind/voice_command std_msgs/msg/String "{data: '去卧室'}"
+ros2 topic pub --once /mecamind/voice_command std_msgs/msg/String "{data: '确认'}"
+ros2 topic pub --once /mecamind/voice_command std_msgs/msg/String "{data: '取消'}"
+```
+
+### 语音核心验收
+
+```bash
+bash scripts/test_voice_core.sh
+```
+
+成功标志：`MECAMIND_VOICE_CORE_OK`（文本确认闭环 + 密钥可读；不强制真麦）。
+
 ## 一键清理测试残留
 
 默认只清理本项目启动的 ROS 2 和 Gazebo 进程：

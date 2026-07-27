@@ -60,7 +60,7 @@ class ObstacleSpec:
 class WorldBlueprint:
     """一份完整的世界档案：外墙尺寸 + 房间列表 + 障碍列表。
 
-    outer_width / outer_depth 是外墙围合的整体尺寸（10m x 8m），
+    outer_width / outer_depth 是外墙围合的整体尺寸（约 11.7m x 8.85m），
     机器人所有活动都发生在这个矩形之内。
     """
 
@@ -85,20 +85,20 @@ def three_room_blueprint() -> WorldBlueprint:
     .world 文件；若要调整布局，必须两边同步修改。
     """
     rooms = [
-        RoomSpec("entry_hall", -2.8, -1.8, 2.4, 2.2),
-        RoomSpec("living_room", 0.0, 0.4, 3.4, 2.6),
-        RoomSpec("bedroom", 2.5, -1.7, 2.2, 2.0),
+        RoomSpec("entry_hall", -4.2, -2.7, 3.6, 3.3),
+        RoomSpec("living_room", 0.0, 0.6, 5.1, 3.9),
+        RoomSpec("bedroom", 3.75, -2.55, 3.3, 3.0),
     ]
     obstacles = [
-        ObstacleSpec("table", -1.8, 1.2, 0.8, 0.8, 0.35),
-        ObstacleSpec("cabinet", 1.9, -0.9, 0.6, 1.0, 0.55),
-        ObstacleSpec("pillar", 0.2, -2.3, 0.35, 0.35, 0.8),
-        ObstacleSpec("chair", 2.8, 1.0, 0.45, 0.45, 0.45),
+        ObstacleSpec("table", -3.9, 2.25, 1.0, 1.0, 0.36),
+        ObstacleSpec("cabinet", 4.05, -2.7, 0.75, 1.2, 0.5),
+        ObstacleSpec("pillar", 0.75, -3.75, 0.45, 0.45, 0.8),
+        ObstacleSpec("chair", 4.2, 1.5, 0.5, 0.5, 0.45),
     ]
     return WorldBlueprint(
         name="three_room_house",
-        outer_width=10.0,
-        outer_depth=8.0,
+        outer_width=11.7,
+        outer_depth=8.85,
         rooms=rooms,
         obstacles=obstacles,
     )

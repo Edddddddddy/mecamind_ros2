@@ -26,6 +26,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import shutil
@@ -39,7 +40,7 @@ from rclpy.node import Node
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
 
-from .aliyun_clients import AliyunSpeechClient
+from .aliyun_clients import AliyunSpeechClient, AliyunStreamingRecognition
 
 
 def parse_audio_file_payload(payload: str) -> str:
@@ -334,6 +335,20 @@ class MicrophoneRecorderNode(Node):
         return response
 
 
+def classify_voice_failure(exc: BaseException) -> tuple[str, str]:
+    """把 ASR/TTS/网络异常映射成 (error_code, 用户可读中文提示)。"""
+    detail = str(exc).lower()
+    if "no recognized text" in detail or "empty" in detail:
+        return "asr_empty", "没听清，请再说一遍。"
+    if "api key" in detail or "401" in detail or "unauthorized" in detail or "invalid" in detail:
+        return "auth", "语音服务鉴权失败，请检查本地密钥配置。"
+    if "429" in detail or "quota" in detail or "throttl" in detail:
+        return "quota", "语音服务暂时繁忙，请稍后再试。"
+    if "timed out" in detail or "timeout" in detail or "unreachable" in detail or "network" in detail:
+        return "network", "语音服务暂时不可用，请稍后再试。"
+    return "asr_error", "语音识别失败，请再说一遍。"
+
+
 class AliyunAsrFileNode(Node):
     """ASR 桥接节点：订阅音频文件路径，调阿里云识别，发布识别文字。
 
@@ -350,10 +365,14 @@ class AliyunAsrFileNode(Node):
         self.declare_parameter("audio_file_topic", "/mecamind/audio_file")
         self.declare_parameter("voice_command_topic", "/mecamind/voice_command")
         self.declare_parameter("asr_result_topic", "/mecamind/asr_result")
+        self.declare_parameter("voice_error_topic", "/mecamind/voice_error")
+        self.declare_parameter("robot_reply_topic", "/mecamind/robot_reply")
         self.declare_parameter("api_key_env", "DASHSCOPE_API_KEY")
         self.declare_parameter("websocket_url", "")
         self.declare_parameter("asr_model", "paraformer-realtime-v2")
         self.declare_parameter("sample_rate", 16000)
+        self.declare_parameter("max_retries", 3)
+        self.declare_parameter("publish_voice_command", True)
 
         # 客户端在构造时创建一次、之后复用；API Key 的检查推迟到第一次
         # 真正识别时才发生（见 aliyun_clients），所以没配 Key 也能启动节点。
@@ -363,6 +382,7 @@ class AliyunAsrFileNode(Node):
             asr_model=str(self.get_parameter("asr_model").value),
             sample_rate=int(self.get_parameter("sample_rate").value),
         )
+        self._fail_count = 0
         self.create_subscription(
             String,
             str(self.get_parameter("audio_file_topic").value),
@@ -379,31 +399,210 @@ class AliyunAsrFileNode(Node):
             str(self.get_parameter("asr_result_topic").value),
             10,
         )
+        self.error_pub = self.create_publisher(
+            String,
+            str(self.get_parameter("voice_error_topic").value),
+            10,
+        )
+        self.reply_pub = self.create_publisher(
+            String,
+            str(self.get_parameter("robot_reply_topic").value),
+            10,
+        )
         self.get_logger().info("MecaMind Aliyun ASR file bridge ready")
+
+    def _publish_failure(self, code: str, reply: str, detail: str) -> None:
+        self._fail_count += 1
+        max_retries = int(self.get_parameter("max_retries").value)
+        if self._fail_count >= max_retries:
+            reply = "请靠近麦克风，或改用文字指令。"
+            code = "asr_give_up"
+            self._fail_count = 0
+        err = String()
+        err.data = json.dumps(
+            {"code": code, "detail": detail, "reply": reply},
+            ensure_ascii=False,
+        )
+        self.error_pub.publish(err)
+        out = String()
+        out.data = reply
+        self.reply_pub.publish(out)
 
     def _audio_cb(self, msg: String) -> None:
         """收到音频路径 -> 调云端 ASR -> 发布识别文字。
 
         注意这里是同步网络调用，识别期间会阻塞本节点的回调队列。
-        任何失败（路径非法、网络错误、识别为空）都只记 error 日志并
-        丢弃这条消息，绝不让异常冒泡导致节点退出——语音链路里
-        "这句没听清"是正常情况，等用户重录即可。
+        失败时发布 voice_error + robot_reply，引导用户重说，节点本身不退出。
         """
         try:
             audio_path = parse_audio_file_payload(msg.data)
             text = self.client.recognize_file(audio_path)
         except Exception as exc:  # noqa: BLE001
             self.get_logger().error(f"Aliyun ASR failed: {exc}")
+            code, reply = classify_voice_failure(exc)
+            self._publish_failure(code, reply, str(exc))
             return
 
+        self._fail_count = 0
         # 先发带元信息的 JSON 结果（调试用），再发裸文本指令（业务用）。
         result = String()
-        result.data = json.dumps({"text": text, "source": "aliyun_asr"}, ensure_ascii=False)
+        result.data = json.dumps({"text": text, "source": "aliyun_asr_file"}, ensure_ascii=False)
         self.result_pub.publish(result)
 
-        command = String()
-        command.data = text
-        self.voice_pub.publish(command)
+        if bool(self.get_parameter("publish_voice_command").value):
+            command = String()
+            command.data = text
+            self.voice_pub.publish(command)
+
+
+class AliyunAsrStreamNode(Node):
+    """流式 ASR：订阅 PCM 帧，用 DashScope Recognition 双向流识别。"""
+
+    def __init__(self) -> None:
+        super().__init__("mecamind_aliyun_asr_stream")
+        self.declare_parameter("pcm_topic", "/mecamind/audio_pcm")
+        self.declare_parameter("pcm_end_topic", "/mecamind/audio_pcm_end")
+        self.declare_parameter("voice_command_topic", "/mecamind/voice_command")
+        self.declare_parameter("asr_partial_topic", "/mecamind/asr_partial")
+        self.declare_parameter("asr_result_topic", "/mecamind/asr_result")
+        self.declare_parameter("voice_error_topic", "/mecamind/voice_error")
+        self.declare_parameter("robot_reply_topic", "/mecamind/robot_reply")
+        self.declare_parameter("api_key_env", "DASHSCOPE_API_KEY")
+        self.declare_parameter("websocket_url", "")
+        self.declare_parameter("asr_model", "paraformer-realtime-v2")
+        self.declare_parameter("sample_rate", 16000)
+        self.declare_parameter("max_retries", 3)
+        # continuous 模式下由 voice_listen 过滤唤醒后再发 voice_command
+        self.declare_parameter("publish_voice_command", False)
+
+        self.client = AliyunSpeechClient(
+            api_key_env=str(self.get_parameter("api_key_env").value),
+            websocket_url=str(self.get_parameter("websocket_url").value),
+            asr_model=str(self.get_parameter("asr_model").value),
+            sample_rate=int(self.get_parameter("sample_rate").value),
+        )
+        self._session: AliyunStreamingRecognition | None = None
+        self._fail_count = 0
+        self._last_text = ""
+
+        self.partial_pub = self.create_publisher(
+            String, str(self.get_parameter("asr_partial_topic").value), 20
+        )
+        self.result_pub = self.create_publisher(
+            String, str(self.get_parameter("asr_result_topic").value), 10
+        )
+        self.voice_pub = self.create_publisher(
+            String, str(self.get_parameter("voice_command_topic").value), 10
+        )
+        self.error_pub = self.create_publisher(
+            String, str(self.get_parameter("voice_error_topic").value), 10
+        )
+        self.reply_pub = self.create_publisher(
+            String, str(self.get_parameter("robot_reply_topic").value), 10
+        )
+        self.create_subscription(
+            String, str(self.get_parameter("pcm_topic").value), self._pcm_cb, 50
+        )
+        self.create_subscription(
+            String, str(self.get_parameter("pcm_end_topic").value), self._pcm_end_cb, 10
+        )
+        self.get_logger().info("MecaMind Aliyun ASR stream bridge ready")
+
+    def _ensure_session(self) -> AliyunStreamingRecognition:
+        if self._session is not None:
+            return self._session
+
+        def on_partial(text: str) -> None:
+            self._last_text = text
+            msg = String()
+            msg.data = json.dumps({"text": text, "final": False}, ensure_ascii=False)
+            self.partial_pub.publish(msg)
+
+        def on_final(text: str) -> None:
+            self._last_text = text
+
+        def on_error(message: str) -> None:
+            self.get_logger().error(f"Streaming ASR error: {message}")
+
+        self._session = self.client.open_streaming_recognition(
+            on_partial=on_partial,
+            on_final=on_final,
+            on_error=on_error,
+        )
+        self._session.start()
+        return self._session
+
+    def _pcm_cb(self, msg: String) -> None:
+        try:
+            data = json.loads(msg.data)
+            pcm = base64.b64decode(str(data.get("pcm_b64", "")))
+        except Exception as exc:  # noqa: BLE001
+            self.get_logger().warn(f"Invalid PCM payload: {exc}")
+            return
+        try:
+            session = self._ensure_session()
+            session.send_audio_frame(pcm)
+        except Exception as exc:  # noqa: BLE001
+            self.get_logger().error(f"Streaming ASR send failed: {exc}")
+            code, reply = classify_voice_failure(exc)
+            self._publish_failure(code, reply, str(exc))
+            self._reset_session()
+
+    def _pcm_end_cb(self, _msg: String) -> None:
+        session = self._session
+        self._session = None
+        text = ""
+        error = ""
+        if session is not None:
+            try:
+                text = session.stop() or session.final_text or self._last_text
+                error = session.error
+            except Exception as exc:  # noqa: BLE001
+                error = str(exc)
+        self._last_text = ""
+        if error and not text:
+            code, reply = classify_voice_failure(RuntimeError(error))
+            self._publish_failure(code, reply, error)
+            return
+        if not text:
+            code, reply = classify_voice_failure(RuntimeError("Aliyun ASR returned no recognized text"))
+            self._publish_failure(code, reply, "empty_stream_result")
+            return
+        self._fail_count = 0
+        result = String()
+        result.data = json.dumps({"text": text, "source": "aliyun_asr_stream"}, ensure_ascii=False)
+        self.result_pub.publish(result)
+        if bool(self.get_parameter("publish_voice_command").value):
+            command = String()
+            command.data = text
+            self.voice_pub.publish(command)
+
+    def _reset_session(self) -> None:
+        session = self._session
+        self._session = None
+        self._last_text = ""
+        if session is not None:
+            try:
+                session.stop()
+            except Exception:  # noqa: BLE001
+                pass
+
+    def _publish_failure(self, code: str, reply: str, detail: str) -> None:
+        self._fail_count += 1
+        max_retries = int(self.get_parameter("max_retries").value)
+        if self._fail_count >= max_retries:
+            reply = "请靠近麦克风，或改用文字指令。"
+            code = "asr_give_up"
+            self._fail_count = 0
+        err = String()
+        err.data = json.dumps(
+            {"code": code, "detail": detail, "reply": reply},
+            ensure_ascii=False,
+        )
+        self.error_pub.publish(err)
+        out = String()
+        out.data = reply
+        self.reply_pub.publish(out)
 
 
 class AliyunTtsNode(Node):
@@ -419,6 +618,7 @@ class AliyunTtsNode(Node):
         super().__init__("mecamind_aliyun_tts")
         self.declare_parameter("input_topic", "/mecamind/robot_reply")
         self.declare_parameter("output_topic", "/mecamind/tts_audio_file")
+        self.declare_parameter("voice_error_topic", "/mecamind/voice_error")
         self.declare_parameter("api_key_env", "DASHSCOPE_API_KEY")
         self.declare_parameter("websocket_url", "")
         self.declare_parameter("tts_model", "cosyvoice-v3-flash")
@@ -439,6 +639,9 @@ class AliyunTtsNode(Node):
             10,
         )
         self.pub = self.create_publisher(String, str(self.get_parameter("output_topic").value), 10)
+        self.error_pub = self.create_publisher(
+            String, str(self.get_parameter("voice_error_topic").value), 10
+        )
         self.get_logger().info("MecaMind Aliyun TTS bridge ready")
 
     def _text_cb(self, msg: String) -> None:
@@ -458,10 +661,121 @@ class AliyunTtsNode(Node):
             )
         except Exception as exc:  # noqa: BLE001
             self.get_logger().error(f"Aliyun TTS failed: {exc}")
+            err = String()
+            err.data = json.dumps(
+                {
+                    "code": "tts_error",
+                    "detail": str(exc),
+                    "reply": "语音播报失败。",
+                },
+                ensure_ascii=False,
+            )
+            self.error_pub.publish(err)
             return
         output = String()
         output.data = str(path)
         self.pub.publish(output)
+
+
+def select_playback_backend(
+    requested: str = "auto",
+    which: Callable[[str], str | None] = shutil.which,
+) -> tuple[str, str]:
+    """选择 TTS 播放后端：ffplay / paplay / aplay。"""
+    normalized = requested.strip().lower()
+    candidates = [
+        ("ffplay", "ffplay"),
+        ("paplay", "paplay"),
+        ("aplay", "aplay"),
+    ]
+    if normalized != "auto":
+        for name, binary in candidates:
+            if name == normalized:
+                path = which(binary)
+                if not path:
+                    raise RuntimeError(f"{binary} not found")
+                return name, path
+        raise ValueError("playback_backend must be auto, ffplay, paplay, or aplay")
+    for name, binary in candidates:
+        path = which(binary)
+        if path:
+            return name, path
+    raise RuntimeError("no audio player found; install ffmpeg, pulseaudio-utils, or alsa-utils")
+
+
+def build_playback_command(backend: str, executable: str, audio_path: str) -> list[str]:
+    """拼装阻塞式播放命令。"""
+    path = str(Path(audio_path).expanduser())
+    if backend == "ffplay":
+        return [executable, "-nodisp", "-autoexit", "-loglevel", "error", path]
+    if backend == "paplay":
+        return [executable, path]
+    if backend == "aplay":
+        return [executable, path]
+    raise ValueError(f"unsupported playback backend: {backend}")
+
+
+class TtsPlaybackNode(Node):
+    """订阅 TTS 音频路径并自动播放，发布 playing/idle/failed 状态。"""
+
+    def __init__(self) -> None:
+        super().__init__("mecamind_tts_playback")
+        self.declare_parameter("input_topic", "/mecamind/tts_audio_file")
+        self.declare_parameter("status_topic", "/mecamind/tts_status")
+        self.declare_parameter("playback_backend", "auto")
+        self._busy = False
+        self.status_pub = self.create_publisher(
+            String, str(self.get_parameter("status_topic").value), 10
+        )
+        self.create_subscription(
+            String,
+            str(self.get_parameter("input_topic").value),
+            self._play_cb,
+            10,
+        )
+        self._publish_status("idle")
+        self.get_logger().info("MecaMind TTS playback ready")
+
+    def _publish_status(self, state: str, detail: str = "", path: str = "") -> None:
+        msg = String()
+        msg.data = json.dumps(
+            {"state": state, "detail": detail, "path": path},
+            ensure_ascii=False,
+        )
+        self.status_pub.publish(msg)
+
+    def _play_cb(self, msg: String) -> None:
+        path = parse_audio_file_payload(msg.data) if msg.data.strip() else ""
+        if not path:
+            return
+        if self._busy:
+            self.get_logger().warn("TTS playback busy; dropping new audio")
+            return
+        audio = Path(path).expanduser()
+        if not audio.is_file():
+            self._publish_status("failed", "file_missing", str(audio))
+            return
+        self._busy = True
+        self._publish_status("playing", path=str(audio))
+        try:
+            backend, executable = select_playback_backend(
+                str(self.get_parameter("playback_backend").value)
+            )
+            command = build_playback_command(backend, executable, str(audio))
+            subprocess.run(
+                command,
+                check=True,
+                timeout=60.0,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            self._publish_status("idle", f"backend={backend}", str(audio))
+        except Exception as exc:  # noqa: BLE001
+            self.get_logger().error(f"TTS playback failed: {exc}")
+            self._publish_status("failed", str(exc), str(audio))
+        finally:
+            self._busy = False
 
 
 def asr_main(args=None) -> None:
@@ -472,6 +786,17 @@ def asr_main(args=None) -> None:
     """
     rclpy.init(args=args)
     node = AliyunAsrFileNode()
+    try:
+        rclpy.spin(node)
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+
+def asr_stream_main(args=None) -> None:
+    """流式 ASR 节点入口。"""
+    rclpy.init(args=args)
+    node = AliyunAsrStreamNode()
     try:
         rclpy.spin(node)
     finally:
@@ -494,6 +819,17 @@ def tts_main(args=None) -> None:
     """TTS 节点入口。"""
     rclpy.init(args=args)
     node = AliyunTtsNode()
+    try:
+        rclpy.spin(node)
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+
+def tts_playback_main(args=None) -> None:
+    """TTS 播放节点入口。"""
+    rclpy.init(args=args)
+    node = TtsPlaybackNode()
     try:
         rclpy.spin(node)
     finally:

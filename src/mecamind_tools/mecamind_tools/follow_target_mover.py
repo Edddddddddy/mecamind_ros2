@@ -96,13 +96,13 @@ class FollowTargetMover(Node):
         super().__init__("mecamind_follow_target_mover")
         self.declare_parameter("world_name", "three_room_house")
         self.declare_parameter("model_name", "follow_target")
-        # 客厅南侧空地绕圈（更大半径，仍远离小车）
+        # 客厅南侧空地绕圈（1.5x 放大后的更大半径）
         self.declare_parameter(
             "waypoints_xy",
-            "[-2.30,-0.10, -3.25,-0.65, -2.85,-2.15, -2.30,-2.30, -1.75,-2.15, -1.35,-0.65]",
+            "[-3.45,-0.15, -4.875,-0.975, -4.275,-3.225, -3.45,-3.45, -2.625,-3.225, -2.025,-0.975]",
         )
         self.declare_parameter("z", 0.38)
-        self.declare_parameter("speed_mps", 0.12)
+        self.declare_parameter("speed_mps", 0.14)
         self.declare_parameter("rate_hz", 4.0)
         self.declare_parameter("enabled", True)
         self.declare_parameter("ping_pong", False)
@@ -113,8 +113,8 @@ class FollowTargetMover(Node):
         self.declare_parameter("follow_start_delay_sec", 2.0)
         self.declare_parameter("reposition_robot", True)
         self.declare_parameter("robot_name", "mecamind_mecanum")
-        self.declare_parameter("robot_x", -2.0)
-        self.declare_parameter("robot_y", 1.95)
+        self.declare_parameter("robot_x", -3.0)
+        self.declare_parameter("robot_y", 2.925)
         self.declare_parameter("robot_z", 0.10)
         self.declare_parameter("robot_yaw", -math.pi / 2.0)
 
@@ -127,12 +127,12 @@ class FollowTargetMover(Node):
         except ValueError as exc:
             self.get_logger().error(f"waypoints 无效，回退默认绕圈: {exc}")
             self._waypoints = [
-                (-2.30, -0.10),
-                (-3.25, -0.65),
-                (-2.85, -2.15),
-                (-2.30, -2.30),
-                (-1.75, -2.15),
-                (-1.35, -0.65),
+                (-3.45, -0.15),
+                (-4.875, -0.975),
+                (-4.275, -3.225),
+                (-3.45, -3.45),
+                (-2.625, -3.225),
+                (-2.025, -0.975),
             ]
         # closed_loop=True 时把起点追加到末尾，才能用 fmod(s) 真正绕圈
         self._path_pts = list(self._waypoints)
