@@ -39,6 +39,7 @@ from mecamind_tools.mission_executor import (
 from mecamind_tools.task_scheduler import parse_task_command
 from mecamind_tools.voice_listen_node import (
     pcm_rms,
+    calibrated_energy_threshold,
     strip_wake_words,
     text_contains_wake_word,
 )
@@ -389,9 +390,31 @@ def test_task_scheduler_parses_basic_voice_intents():
     assert "确认" in unknown.reply
 
 
+def test_calibrated_energy_threshold():
+    # 底噪中位数 500，margin 2.5 -> 门限 1250（高于 floor 450）
+    samples = [400.0, 500.0, 600.0, 480.0, 520.0]
+    assert calibrated_energy_threshold(samples, 450.0, 2.5) == 500.0 * 2.5
+    # 安静环境：中位数很低时不低于 floor
+    assert calibrated_energy_threshold([10.0, 20.0, 30.0], 450.0, 2.5) == 450.0
+    # 无样本时退回 floor
+    assert calibrated_energy_threshold([], 450.0, 2.5) == 450.0
+
+
 def test_wake_word_helpers_and_pcm_energy():
-    assert text_contains_wake_word("小智去卧室", ["小智", "mecamind"])
-    assert strip_wake_words("小智，去卧室", ["小智"]) == "去卧室"
+    wake_words = ["小度小度", "小度", "小杜", "小渡", "小肚"]
+    # 标准叫法与带指令的连读
+    assert text_contains_wake_word("小度小度去卧室", wake_words)
+    assert strip_wake_words("小度小度去卧室", wake_words) == "去卧室"
+    # ASR 常见转写：唤醒词之间带标点，靠单个「小度」子串兜底
+    assert text_contains_wake_word("小度，小度，去卧室", wake_words)
+    assert strip_wake_words("小度，小度，去卧室", wake_words) == "去卧室"
+    # 同音误转写兜底
+    assert text_contains_wake_word("小杜小杜前进", wake_words)
+    assert strip_wake_words("小杜小杜前进", wake_words) == "前进"
+    assert text_contains_wake_word("小渡去客厅", wake_words)
+    assert text_contains_wake_word("小肚跟随", wake_words)
+    # 未唤醒的普通句子不应误触发
+    assert not text_contains_wake_word("这节课讲麦克纳姆轮", wake_words)
     # 静音帧能量应为 0
     assert pcm_rms(b"\x00\x00" * 80) == 0.0
 

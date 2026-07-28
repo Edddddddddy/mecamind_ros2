@@ -162,6 +162,9 @@ class TaskSchedulerNode(Node):
     def _cb(self, msg: String) -> None:
         """收到语音文本：解析 -> 发布任务命令 -> 有回复语则同时发去 TTS。"""
         command = self._parse_command(msg.data)
+        self.get_logger().info(
+            f"Voice text {msg.data!r} -> intent={command.intent} target={command.target!r}"
+        )
         output = String()
         output.data = command.to_json()
         self.pub.publish(output)

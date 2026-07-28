@@ -548,7 +548,15 @@ class AliyunAsrStreamNode(Node):
             self._publish_failure(code, reply, str(exc))
             self._reset_session()
 
-    def _pcm_end_cb(self, _msg: String) -> None:
+    def _pcm_end_cb(self, msg: String) -> None:
+        # 听节点在 pcm_end 里带了 woken 标志：未唤醒的会话大多是环境
+        # 噪音误触发，识别为空时静默丢弃，不播报失败提示（否则 TTS
+        # 会不停插话「没听清」）。
+        try:
+            end_info = json.loads(msg.data) if msg.data.strip() else {}
+        except json.JSONDecodeError:
+            end_info = {}
+        woken = bool(end_info.get("woken", True))
         session = self._session
         self._session = None
         text = ""
@@ -560,14 +568,20 @@ class AliyunAsrStreamNode(Node):
             except Exception as exc:  # noqa: BLE001
                 error = str(exc)
         self._last_text = ""
-        if error and not text:
-            code, reply = classify_voice_failure(RuntimeError(error))
-            self._publish_failure(code, reply, error)
-            return
         if not text:
-            code, reply = classify_voice_failure(RuntimeError("Aliyun ASR returned no recognized text"))
-            self._publish_failure(code, reply, "empty_stream_result")
+            if not woken:
+                self.get_logger().info("Unwoken session ended with no text; ignored")
+                return
+            if error:
+                code, reply = classify_voice_failure(RuntimeError(error))
+                self._publish_failure(code, reply, error)
+            else:
+                code, reply = classify_voice_failure(
+                    RuntimeError("Aliyun ASR returned no recognized text")
+                )
+                self._publish_failure(code, reply, "empty_stream_result")
             return
+        self.get_logger().info(f"ASR stream final: {text!r}")
         self._fail_count = 0
         result = String()
         result.data = json.dumps({"text": text, "source": "aliyun_asr_stream"}, ensure_ascii=False)
@@ -624,7 +638,8 @@ class AliyunTtsNode(Node):
         self.declare_parameter("tts_model", "cosyvoice-v3-flash")
         self.declare_parameter("tts_voice", "longanyang")
         self.declare_parameter("output_dir", str(Path("~/.ros/mecamind_tts").expanduser()))
-        self.declare_parameter("audio_format", "mp3")
+        # wav 在 WSL/RDP 音频链路下播放更顺滑（paplay 原生支持、无需解码）。
+        self.declare_parameter("audio_format", "wav")
 
         self.client = AliyunSpeechClient(
             api_key_env=str(self.get_parameter("api_key_env").value),
@@ -653,6 +668,7 @@ class AliyunTtsNode(Node):
         text = msg.data.strip()
         if not text:
             return
+        self.get_logger().info(f"TTS synth: {text!r}")
         try:
             path = self.client.synthesize_to_file(
                 text,
@@ -681,11 +697,15 @@ def select_playback_backend(
     requested: str = "auto",
     which: Callable[[str], str | None] = shutil.which,
 ) -> tuple[str, str]:
-    """选择 TTS 播放后端：ffplay / paplay / aplay。"""
+    """选择 TTS 播放后端：paplay / ffplay / aplay。
+
+    auto 优先 paplay：直接走 PulseAudio、无需解码，WSLg 下播放 wav
+    最顺滑；ffplay 兜底可解码 mp3；aplay 是纯 ALSA 环境的最后手段。
+    """
     normalized = requested.strip().lower()
     candidates = [
-        ("ffplay", "ffplay"),
         ("paplay", "paplay"),
+        ("ffplay", "ffplay"),
         ("aplay", "aplay"),
     ]
     if normalized != "auto":
@@ -757,6 +777,7 @@ class TtsPlaybackNode(Node):
             return
         self._busy = True
         self._publish_status("playing", path=str(audio))
+        self.get_logger().info(f"Playing TTS audio: {audio.name}")
         try:
             backend, executable = select_playback_backend(
                 str(self.get_parameter("playback_backend").value)

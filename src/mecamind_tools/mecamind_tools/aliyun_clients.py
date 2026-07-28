@@ -403,13 +403,27 @@ class AliyunSpeechClient:
         比传大块二进制数据更简单可靠。
         """
         _set_dashscope_runtime(self.api_key_env, self.websocket_url)
-        from dashscope.audio.tts_v2 import SpeechSynthesizer  # type: ignore
+        from dashscope.audio.tts_v2 import AudioFormat, SpeechSynthesizer  # type: ignore
 
+        # 注意：audio_format 必须真正传给 SDK，否则 call() 按默认 mp3 输出，
+        # 文件扩展名和实际内容不一致会让播放器解码失败。
+        # WSL/RDP 音频转发下 wav + paplay 播放最顺滑（无需解码、缓冲友好）。
+        format_map = {
+            "wav": AudioFormat.WAV_22050HZ_MONO_16BIT,
+            "mp3": AudioFormat.MP3_22050HZ_MONO_256KBPS,
+        }
+        fmt = audio_format.lower()
+        if fmt not in format_map:
+            raise ValueError("audio_format must be wav or mp3")
         root = Path(output_dir).expanduser()
         root.mkdir(parents=True, exist_ok=True)
         safe_stamp = int(time.time() * 1000)
-        path = root / f"mecamind_tts_{safe_stamp}.{audio_format.lower()}"
-        synthesizer = SpeechSynthesizer(model=self.tts_model, voice=self.tts_voice)
+        path = root / f"mecamind_tts_{safe_stamp}.{fmt}"
+        synthesizer = SpeechSynthesizer(
+            model=self.tts_model,
+            voice=self.tts_voice,
+            format=format_map[fmt],
+        )
         # call() 同步返回完整音频字节；空结果说明合成失败（如文本不合法、配额用尽）。
         audio = synthesizer.call(text)
         if not audio:

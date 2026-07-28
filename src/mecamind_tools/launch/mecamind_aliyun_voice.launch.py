@@ -250,7 +250,11 @@ def generate_launch_description():
                 "microphone_output_dir",
                 default_value="~/.ros/mecamind_mic",
             ),
-            DeclareLaunchArgument("wake_words", default_value="小智,mecamind,美卡"),
+            DeclareLaunchArgument(
+                "wake_words",
+                default_value="小度小度,小度,小杜,小渡,小肚",
+                description="唤醒词（逗号分隔子串匹配）：小度小度 + 同音误转写兜底",
+            ),
             DeclareLaunchArgument("energy_threshold", default_value="450.0"),
             DeclareLaunchArgument("playback_backend", default_value="auto"),
             OpaqueFunction(function=_launch_setup),

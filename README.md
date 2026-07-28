@@ -39,7 +39,7 @@ git checkout lesson4.0
 
 - `git fetch --tags` 成功时可能没有输出，属正常；用 `git tag -l` 确认本地已有对应 tag。
 - 查看远端 tag：`git ls-remote --tags origin`
-- 第五节讲义已就绪；冻结版本时再打 `lesson5.0`。其后 `lesson6.0` 同理。
+- 第五、六节讲义已就绪；冻结版本时再打 `lesson5.0` / `lesson6.0`。
 - 若要回到最新开发分支：`git checkout main && git pull`
 
 讲义（仓库发布 PDF；本地若有 Markdown 源稿同名即可）：
@@ -51,6 +51,7 @@ git checkout lesson4.0
 - 第五节课：`docs/10.3.5_多线程推理与视觉跟随控制.pdf`
 - 第五节课源码走读：`docs/10.3.5_工程版源码走读.pdf`
 - 第五节课白板：`docs/10.3.5_多线程推理与视觉跟随控制.excalidraw`（预览图同名 `.png`）
+- 第六节课：`docs/10.3.6_语音交互大模型与项目验收.pdf`（源稿同名 `.md`）
 
 ## 环境
 
@@ -393,7 +394,7 @@ ros2 launch mecamind_tools mecamind_aliyun_voice.launch.py
 
 默认能力：
 
-- 关键词唤醒：`小智` / `mecamind` / `美卡`（参数 `wake_words`）
+- 关键词唤醒：`小度小度`（参数 `wake_words`；内置 `小度/小杜/小渡/小肚` 同音与标点误转写兜底）
 - 能量门限连续听 + 流式 ASR（`paraformer-realtime-v2`）
 - 任务解析（默认阿里云 LLM，失败自动降级规则）
 - TTS 合成 + 本机自动播放（`ffplay` / `paplay` / `aplay`）
