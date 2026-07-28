@@ -63,6 +63,20 @@
         <visual name="cabinet_visual"><pose>4.05 -2.7 0.25 0 0 0</pose><geometry><box><size>0.75 1.2 0.5</size></box></geometry><material><diffuse>0.25 0.45 0.25 1</diffuse></material></visual>
         <collision name="pillar"><pose>0.75 -3.75 0.4 0 0 0</pose><geometry><box><size>0.45 0.45 0.8</size></box></geometry></collision>
         <visual name="pillar_visual"><pose>0.75 -3.75 0.4 0 0 0</pose><geometry><box><size>0.45 0.45 0.8</size></box></geometry><material><diffuse>0.45 0.45 0.50 1</diffuse></material></visual>
+        <!-- 跟随演示障碍物（与 follow_target_mover.FOLLOW_DEMO_OBSTACLES 同步）：
+             大环回路圈内有两个 0.7m 高箱——crate_center（圈内南侧）和
+             crate_north（圈内北侧），红柱绕到背面时会被完整遮挡，
+             考验"跟丢后弧线绕行找回"；crate_east 在回路东北外侧、贴隔断墙，
+             考验小车拐弯切角时的激光避障偏置；crate_hall 在回路东侧走廊，
+             小车沿东边直线北上时它出现在右手侧，考验右侧避障偏置。 -->
+        <collision name="crate_center"><pose>-3.75 -2.0 0.35 0 0 0</pose><geometry><box><size>0.45 0.45 0.7</size></box></geometry></collision>
+        <visual name="crate_center_visual"><pose>-3.75 -2.0 0.35 0 0 0</pose><geometry><box><size>0.45 0.45 0.7</size></box></geometry><material><diffuse>0.76 0.60 0.42 1</diffuse></material></visual>
+        <collision name="crate_north"><pose>-3.75 -0.7 0.35 0 0 0</pose><geometry><box><size>0.4 0.4 0.7</size></box></geometry></collision>
+        <visual name="crate_north_visual"><pose>-3.75 -0.7 0.35 0 0 0</pose><geometry><box><size>0.4 0.4 0.7</size></box></geometry><material><diffuse>0.78 0.62 0.40 1</diffuse></material></visual>
+        <collision name="crate_east"><pose>-2.15 1.3 0.25 0 0 0</pose><geometry><box><size>0.4 0.4 0.5</size></box></geometry></collision>
+        <visual name="crate_east_visual"><pose>-2.15 1.3 0.25 0 0 0</pose><geometry><box><size>0.4 0.4 0.5</size></box></geometry><material><diffuse>0.80 0.66 0.46 1</diffuse></material></visual>
+        <collision name="crate_hall"><pose>-1.1 -2.3 0.25 0 0 0</pose><geometry><box><size>0.4 0.4 0.5</size></box></geometry></collision>
+        <visual name="crate_hall_visual"><pose>-1.1 -2.3 0.25 0 0 0</pose><geometry><box><size>0.4 0.4 0.5</size></box></geometry><material><diffuse>0.72 0.56 0.38 1</diffuse></material></visual>
       </link>
     </model>
 
@@ -75,7 +89,7 @@
     <include>
       <uri>model://follow_target</uri>
       <name>follow_target</name>
-      <pose>-3.45 -0.15 0.38 0 0 0</pose>
+      <pose>-3.45 0.7 0.38 0 0 0</pose>
     </include>
   </world>
 </sdf>

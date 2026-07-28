@@ -46,6 +46,27 @@ from std_msgs.msg import Bool, Float32
 
 Point = Tuple[float, float]
 
+# 演示默认回路：圆心约 (-3.45,-1.8)、半径约 1.65m 的六边形近似圆。
+FOLLOW_DEMO_WAYPOINTS: List[Point] = [
+    (-3.45, 0.7),
+    (-4.95, 0.3),
+    (-4.95, -2.7),
+    (-3.6, -3.45),
+    (-2.55, -2.85),
+    (-2.55, -0.2),
+]
+
+# 客厅障碍物脚印，与 three_room_house_follow.sdf 保持同步：
+# name -> (中心x, 中心y, x向尺寸, y向尺寸)。改 SDF 必须同步改这里，
+# 单元测试会校验"红柱路径到每个障碍物的最小间距"够小车通行。
+FOLLOW_DEMO_OBSTACLES = {
+    "crate_center": (-3.75, -2.0, 0.45, 0.45),
+    "crate_north": (-3.75, -0.7, 0.4, 0.4),
+    "crate_east": (-2.15, 1.3, 0.4, 0.4),
+    "crate_hall": (-1.1, -2.3, 0.4, 0.4),
+    "table": (-3.9, 2.25, 1.0, 1.0),
+}
+
 
 def profile_speed_at(
     t: float,
@@ -184,14 +205,7 @@ class FollowTargetMover(Node):
             self._waypoints = _parse_waypoints(self.get_parameter("waypoints_xy").value)
         except ValueError as exc:
             self.get_logger().error(f"waypoints 无效，回退默认绕圈: {exc}")
-            self._waypoints = [
-                (-3.45, -0.15),
-                (-4.875, -0.975),
-                (-4.275, -3.225),
-                (-3.45, -3.45),
-                (-2.625, -3.225),
-                (-2.025, -0.975),
-            ]
+            self._waypoints = list(FOLLOW_DEMO_WAYPOINTS)
         # closed_loop=True 时把起点追加到末尾，才能用 fmod(s) 真正绕圈
         self._path_pts = list(self._waypoints)
         if bool(self.get_parameter("closed_loop").value):

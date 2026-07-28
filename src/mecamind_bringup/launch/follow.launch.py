@@ -30,8 +30,13 @@ detector(synthetic/camera/video) -> /mecamind/detections
 - 约 10s 后自动打开跟随；也可手动：
   ros2 topic pub --once /mecamind/follow_enable std_msgs/msg/Bool '{data: true}'
 - Gazebo 课堂演示：红柱在放大后的客厅南侧空地单向绕圈（远离车头），小车朝南跟随；
-  距离由 desired_width 调节；转向/距离均为 PID（Kp/Ki/Kd），过近会主动后退。
+  跟随距离由 desired_distance 调节（画面宽度反算真实距离后闭环）；
+  转向/距离均为 PID（Kp/Ki/Kd），离得越远越快（饱和于 max_linear），过近会主动后退。
   红柱默认慢(0.09)↔快(0.23)梯形变速，便于观察小车跟随加速。
+- 绕圈回路中央有一个 0.7m 高的木箱（红柱绕它转、绕到背面会被遮挡），
+  东北侧还有一个矮箱；跟随控制器融合了激光避障（转向偏置+麦轮横移），
+  跟丢时朝目标消失方向弧线绕行找回。把 scan_avoidance_enable 设为 false
+  可以现场对比"纯视觉 PID 卡箱子"和"融合避障绕箱子"的差别。
 """
 
 from ament_index_python.packages import get_package_share_directory
@@ -123,11 +128,12 @@ def generate_launch_description():
             {"use_sim_time": True},
             {"world_name": "three_room_house"},
             {"model_name": "follow_target"},
-            # 圆心约 (-3.45,-1.8) r≈1.65 六边形（1.5x 放大后更大活动范围）
+            # 大环形回路（周长约 11.2m），圈内包住 crate_center 和 crate_north
+            # 两个高箱，与 FOLLOW_DEMO_WAYPOINTS / SDF 障碍物布局保持同步
             {
                 "waypoints_xy": (
-                    "[-3.45,-0.15, -4.875,-0.975, -4.275,-3.225, "
-                    "-3.45,-3.45, -2.625,-3.225, -2.025,-0.975]"
+                    "[-3.45,0.7, -4.95,0.3, -4.95,-2.7, "
+                    "-3.6,-3.45, -2.55,-2.85, -2.55,-0.2]"
                 )
             },
             {"z": 0.38},
@@ -159,20 +165,41 @@ def generate_launch_description():
         output="screen",
         parameters=[
             {"output_cmd_topic": "/cmd_vel_follow"},
-            # 画面目标宽度目标：越大跟得越近（0.36→0.50 明显贴进）
-            {"desired_width": 0.50},
-            {"max_linear": 0.28},
+            # 距离通道按"真实距离"闭环：宽度→距离反算参数与红柱直径
+            # (0.2m)、相机 HFOV(1.047rad) 匹配；期望跟随距离 0.8m。
+            {"desired_distance": 0.80},
+            {"target_real_width": 0.20},
+            {"camera_hfov": 1.047},
+            # 速度上限要明显高于红柱快速段(0.23)，否则没有追赶余量；
+            # kp 按米计：落后 0.4m 即给满速。P 控制跟匀速目标必有稳态
+            # 滞后（误差≈目标速度/kp），积分给足力度（ki*i_limit≈0.24m/s）
+            # 把它消掉——柱子加速时积分自动顶上去，不再"越快离越远"。
+            {"max_linear": 0.35},
             {"max_angular": 1.0},
-            {"kp_linear": 1.35},
-            {"ki_linear": 0.08},
-            {"kd_linear": 0.05},
+            {"kp_linear": 0.9},
+            {"ki_linear": 0.30},
+            {"kd_linear": 0.10},
             {"kp_angular": 2.2},
             {"ki_angular": 0.15},
             {"kd_angular": 0.08},
             {"i_limit_angular": 0.45},
-            {"i_limit_linear": 0.30},
+            {"i_limit_linear": 0.80},
             {"search_on_loss": True},
             {"search_angular": 0.45},
+            # 激光避障融合：侧前方障碍转成转向偏置+麦轮横移，防止拐弯切角蹭箱子；
+            # 关掉（false）即可课堂对比"无避障纯 PID"的卡死现象
+            {"scan_avoidance_enable": True},
+            {"scan_topic": "/scan"},
+            {"avoid_clear_dist": 0.90},
+            {"avoid_stop_dist": 0.30},
+            {"avoid_max_turn": 0.65},
+            {"avoid_max_lateral": 0.12},
+            # 红柱回波豁免：正前回波不比目标近 0.3m 以上就不当障碍，
+            # 否则车会把要追的柱子当墙、越近越慢永远追不上
+            {"avoid_target_margin": 0.30},
+            # 丢失后先朝目标消失方向弧线绕行 4s（绕过遮挡箱），再原地旋转兜底
+            {"search_arc_sec": 4.0},
+            {"search_arc_linear": 0.10},
         ],
     )
 

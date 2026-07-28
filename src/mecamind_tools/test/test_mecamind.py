@@ -42,8 +42,20 @@ from mecamind_tools.voice_listen_node import (
     strip_wake_words,
     text_contains_wake_word,
 )
-from mecamind_tools.vision_follow_controller import compute_follow_command, should_publish_follow
-from mecamind_tools.follow_target_mover import profile_cycle_sec, profile_speed_at
+from mecamind_tools.vision_follow_controller import (
+    compute_avoidance_bias,
+    compute_follow_command,
+    estimate_target_distance,
+    front_distance_ignoring_target,
+    search_turn_direction,
+    should_publish_follow,
+)
+from mecamind_tools.follow_target_mover import (
+    FOLLOW_DEMO_OBSTACLES,
+    FOLLOW_DEMO_WAYPOINTS,
+    profile_cycle_sec,
+    profile_speed_at,
+)
 from mecamind_tools.world_geometry import load_world_geometry
 from mecamind_tools.world_profiles import three_room_blueprint, summarize_blueprint, validate_three_room_blueprint
 
@@ -230,10 +242,95 @@ def test_vision_follow_pid_integral_grows_on_steady_error():
     assert abs(last.linear_state.integral) > 0.0
 
 
+def test_vision_follow_speed_scales_with_distance_and_caps():
+    # 直径 0.2m 的柱子：宽度 0.35 ≈ 0.5m（比期望 0.8m 近）；宽度 0.1 ≈ 1.7m（远）
+    near = compute_follow_command(cx=0.5, target_width=0.35, dt=0.1, max_linear=0.35)
+    mid = compute_follow_command(cx=0.5, target_width=0.15, dt=0.1, max_linear=0.35)
+    far = compute_follow_command(cx=0.5, target_width=0.05, dt=0.1, max_linear=0.35)
+    # 比期望距离近 → 后退；越远 → 越快；再远也不超过最大限速
+    assert near.linear_x < 0.0
+    assert far.linear_x >= mid.linear_x > 0.0
+    assert far.linear_x <= 0.35
+
+
+def test_estimate_target_distance_matches_pinhole_model():
+    # f_norm≈0.866：宽度 0.2 → 距离≈0.87m；宽度越小距离越远；有上限截断
+    assert abs(estimate_target_distance(0.20) - 0.866) < 0.01
+    assert estimate_target_distance(0.10) > estimate_target_distance(0.20)
+    assert estimate_target_distance(0.0001) == 6.0
+
+
+def test_front_avoidance_ignores_target_own_echo():
+    # 正前回波 0.6m ≈ 视觉估的目标距离 0.65m → 是红柱本身，豁免（inf）
+    assert front_distance_ignoring_target(0.60, 0.65) == float("inf")
+    # 回波比目标近得多（0.4 < 0.9-0.3）→ 真障碍挡在中间，不豁免
+    assert front_distance_ignoring_target(0.40, 0.90) == 0.40
+    # 没有目标距离信息 → 原样返回
+    assert front_distance_ignoring_target(0.40, None) == 0.40
+
+
 def test_vision_follow_requires_enable_flag():
     assert not should_publish_follow(enabled=False, confirmed=True)
     assert not should_publish_follow(enabled=True, confirmed=False)
     assert should_publish_follow(enabled=True, confirmed=True)
+
+
+def test_follow_avoidance_bias_pushes_away_from_side_obstacle():
+    # 右前方近障 → 向左转（正 angular）+ 向左横移（正 lateral），前进不减速
+    bias = compute_avoidance_bias(left_dist=2.0, right_dist=0.4, front_dist=2.0)
+    assert bias.angular > 0.0
+    assert bias.lateral > 0.0
+    assert bias.linear_scale == 1.0
+    # 左前方近障 → 全部反向
+    bias = compute_avoidance_bias(left_dist=0.4, right_dist=2.0, front_dist=2.0)
+    assert bias.angular < 0.0
+    assert bias.lateral < 0.0
+    # 三个方向都空 → 完全不干预
+    bias = compute_avoidance_bias(left_dist=3.0, right_dist=3.0, front_dist=3.0)
+    assert bias.angular == 0.0
+    assert bias.lateral == 0.0
+    assert bias.linear_scale == 1.0
+
+
+def test_follow_avoidance_bias_slows_and_turns_when_front_blocked():
+    # 正前贴脸、右侧更空 → 明显减速 + 向右转（负 angular）
+    bias = compute_avoidance_bias(left_dist=0.5, right_dist=2.0, front_dist=0.35)
+    assert bias.linear_scale < 0.5
+    assert bias.angular < 0.0
+    # 正前到 stop 线 → 前进完全归零
+    bias = compute_avoidance_bias(left_dist=2.0, right_dist=2.0, front_dist=0.25)
+    assert bias.linear_scale == 0.0
+
+
+def test_follow_search_direction_follows_last_seen_side():
+    # 目标最后在画面右半区 → 顺时针（向右，负方向）弧线找
+    assert search_turn_direction(0.8) == -1.0
+    # 左半区 → 逆时针
+    assert search_turn_direction(0.2) == 1.0
+
+
+def _point_to_segment_dist(px, py, ax, ay, bx, by):
+    """点到线段的最短距离（测试辅助）。"""
+    dx, dy = bx - ax, by - ay
+    seg_len_sq = dx * dx + dy * dy
+    if seg_len_sq < 1e-12:
+        return ((px - ax) ** 2 + (py - ay) ** 2) ** 0.5
+    t = max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / seg_len_sq))
+    cx, cy = ax + t * dx, ay + t * dy
+    return ((px - cx) ** 2 + (py - cy) ** 2) ** 0.5
+
+
+def test_follow_demo_obstacles_leave_corridor_for_robot():
+    """红柱回路到每个障碍物的最小间距必须 >= 0.8m（车宽 + 绕行余量），
+    否则小车跟在红柱后面会被挤进过不去的缝里——这正是之前"卡箱子"的教训。"""
+    loop = list(FOLLOW_DEMO_WAYPOINTS) + [FOLLOW_DEMO_WAYPOINTS[0]]
+    for name, (ox, oy, sx, sy) in FOLLOW_DEMO_OBSTACLES.items():
+        half_diag = 0.5 * (sx * sx + sy * sy) ** 0.5
+        min_clear = min(
+            _point_to_segment_dist(ox, oy, *loop[i], *loop[i + 1]) - half_diag
+            for i in range(len(loop) - 1)
+        )
+        assert min_clear >= 0.8, f"{name} 距红柱路径仅 {min_clear:.2f}m，不够小车通行"
 
 
 def test_follow_target_speed_profile_trapezoid():
