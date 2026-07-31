@@ -37,6 +37,36 @@ from .aliyun_clients import AliyunLlmClient, AliyunTaskPlan
 CONFIRM_WORDS = ("确认", "确定", "好的", "可以", "执行", "yes", "confirm", "ok", "okay")
 REJECT_WORDS = ("不要", "否", "算了", "拒绝", "no", "reject")
 
+# 方向运动关键词表：语音里的"前进/后退/左转/右转"直接映射成 move 意图，
+# 由 mission_executor 以固定速度+固定时长的方式执行（类摇杆的点动控制）。
+# 顺序有讲究：先查双字词（左转），再查介词短语（向左/往左），避免误匹配。
+MOVE_DIRECTION_WORDS = {
+    "forward": ("前进", "向前", "往前", "直走", "forward", "go straight"),
+    "backward": ("后退", "退后", "向后", "往后", "倒退", "倒车", "backward", "go back"),
+    "left": ("左转", "向左", "往左", "turn left"),
+    "right": ("右转", "向右", "往右", "turn right"),
+}
+
+MOVE_REPLIES = {
+    "forward": "好的，前进。",
+    "backward": "好的，后退。",
+    "left": "好的，左转。",
+    "right": "好的，右转。",
+}
+
+
+def parse_move_direction(text: str) -> str:
+    """从文本里识别方向运动指令，返回 forward/backward/left/right，识别不出返回空串。
+
+    纯函数便于单测。用简单子串匹配即可：ASR 输出已相对干净，
+    且 stop/cancel 优先级更高（在调用方先判），不会把"停止后退"误判成后退。
+    """
+    normalized = text.strip().lower()
+    for direction, words in MOVE_DIRECTION_WORDS.items():
+        if any(word in normalized for word in words):
+            return direction
+    return ""
+
 
 @dataclass(frozen=True)
 class TaskCommand:
@@ -87,6 +117,10 @@ def parse_task_command(text: str) -> TaskCommand:
         word in normalized for word in REJECT_WORDS
     ):
         return TaskCommand("cancel", reply="好的，已取消。")
+    # 方向点动：优先于确认词判断（"向前"里的"前"不会撞上确认词，但保持顺序清晰）。
+    direction = parse_move_direction(normalized)
+    if direction:
+        return TaskCommand("move", target=direction, reply=MOVE_REPLIES[direction])
     # 短确认语：仅在整句很短时命中，避免「确认去卧室」误判为纯确认。
     if len(normalized) <= 6 and any(word in normalized for word in CONFIRM_WORDS):
         return TaskCommand("confirm", reply="好的，开始执行。")
@@ -182,9 +216,10 @@ class TaskSchedulerNode(Node):
         降级只记 warn 日志——网络抖动导致的 LLM 失败是预期内情况，
         不应该让整条语音链路瘫痪。
         """
-        # 确认/取消短指令永远走规则，避免 LLM 延迟打断确认闭环。
+        # 确认/取消/停止/方向点动永远走规则：这些指令要求低延迟、零歧义，
+        # 交给 LLM 反而会引入 1 秒级延迟且可能被解析成"导航去 backward"。
         quick = parse_task_command(text)
-        if quick.intent in {"confirm", "cancel", "stop"}:
+        if quick.intent in {"confirm", "cancel", "stop", "move"}:
             return quick
 
         provider = str(self.get_parameter("provider").value).strip().lower()

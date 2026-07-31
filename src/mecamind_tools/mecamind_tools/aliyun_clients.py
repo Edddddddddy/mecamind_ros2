@@ -177,7 +177,7 @@ def parse_task_plan_payload(payload: str, fallback_text: str = "") -> AliyunTask
     if not isinstance(data, dict):
         raise ValueError("LLM task payload must be a JSON object")
     intent = str(data.get("intent", "unknown")).strip().lower() or "unknown"
-    allowed = {"stop", "cancel", "confirm", "patrol", "follow", "mapping", "navigate", "unknown"}
+    allowed = {"stop", "cancel", "confirm", "patrol", "follow", "mapping", "navigate", "move", "unknown"}
     if intent not in allowed:
         intent = "unknown"
     return AliyunTaskPlan(
@@ -198,8 +198,10 @@ def build_task_parser_messages(text: str) -> list[dict[str, str]]:
     system = (
         "You are the task parser for a ROS 2 indoor mobile robot. "
         "Convert the user's command into strict JSON only. "
-        "Allowed intents are stop, cancel, confirm, patrol, follow, mapping, navigate, unknown. "
+        "Allowed intents are stop, cancel, confirm, patrol, follow, mapping, navigate, move, unknown. "
         "Use target for room or waypoint names. "
+        "For short relative motions (go forward, back up, turn left, turn right) use intent move "
+        "with target one of forward, backward, left, right. "
         "Set requires_confirmation true when the command is ambiguous or risky. "
         "The JSON schema is: "
         '{"intent":"navigate","target":"bedroom","requires_confirmation":false,"reply":"OK"}'
@@ -305,7 +307,7 @@ def _audio_format_from_path(path: str | Path, fallback: str = "wav") -> str:
 
 def extract_recognition_text(sentences: Any) -> str:
     """从 ASR 返回结果中提取纯文本，兼容多种返回形态。
-
+     把结果打印出来
     DashScope 的 get_sentence() 返回结构不固定：可能是字符串、单个句子 dict
     （含 "text" 键）、嵌套 dict（含 "sentences" 键）、或句子 dict 列表。
     这里用递归逐层拆解，把所有句子文本拼成一个字符串，屏蔽 SDK 返回格式

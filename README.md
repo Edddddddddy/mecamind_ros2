@@ -364,9 +364,15 @@ MECAMIND_CP5_BACKEND=gazebo bash scripts/test_cp5.sh
 
 ## 第六次课：语音产品核心（唤醒 / 流式 ASR / TTS 播放）
 
+完整讲义：`docs/10.3.6_语音交互大模型与项目验收.md`（PDF 同名）。课堂开户与四终端联调见讲义 **§5.1**、**LAB-5**。
+
 ### 密钥（不要提交 git）
 
-复制模板并填入 DashScope API Key：
+1. 登录[百炼控制台 · API-KEY](https://bailian.console.aliyun.com/cn-beijing/#/api-key) 创建 `sk-...`。
+2. 在[免费额度](https://bailian.console.aliyun.com/cn-beijing/#/costing-balance/free-quota)确认 ASR / TTS / 通义有额度。
+3. **不要开 thinking 模式**（任务解析只要短 JSON，thinking 会拖慢且易解析失败）。
+
+复制模板并填入：
 
 ```bash
 cp src/mecamind_tools/config/mecamind_aliyun.example.yaml \
@@ -381,6 +387,7 @@ cp src/mecamind_tools/config/mecamind_aliyun.example.yaml \
 
 ```bash
 pip install --user --break-system-packages -U dashscope
+# WSL 真麦/播报：sudo apt install -y ffmpeg pulseaudio-utils
 ```
 
 ### 启动连续听（默认）
@@ -396,9 +403,11 @@ ros2 launch mecamind_tools mecamind_aliyun_voice.launch.py
 
 - 关键词唤醒：`小度小度`（参数 `wake_words`；内置 `小度/小杜/小渡/小肚` 同音与标点误转写兜底）
 - 能量门限连续听 + 流式 ASR（`paraformer-realtime-v2`）
-- 任务解析（默认阿里云 LLM，失败自动降级规则）
-- TTS 合成 + 本机自动播放（`ffplay` / `paplay` / `aplay`）
+- 任务解析（默认阿里云 LLM，失败自动降级规则）；短指令 `停止/前进/后退/左转/右转` 走本地规则
+- TTS 合成 + 本机自动播放（`paplay` / `ffplay` / `aplay`）
 - 模糊指令会先请你「确认 / 取消」
+
+纯语音 launch **默认不起** `mission_executor`：要控车请另起执行器，或按讲义 LAB-5 四终端（跟随仿真 + executor + 语音 + `rqt_image_view`）。
 
 按键说话兜底（无唤醒）：
 

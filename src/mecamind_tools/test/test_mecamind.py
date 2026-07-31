@@ -33,10 +33,11 @@ from mecamind_tools.sim_core import SimPose, MecaMindSimModel
 from mecamind_tools.fake_detection_publisher import build_detection_payload
 from mecamind_tools.mission_executor import (
     load_named_goals,
+    move_velocity_for_direction,
     next_mission_mode,
     resolve_named_goal,
 )
-from mecamind_tools.task_scheduler import parse_task_command
+from mecamind_tools.task_scheduler import parse_move_direction, parse_task_command
 from mecamind_tools.voice_listen_node import (
     pcm_rms,
     calibrated_energy_threshold,
@@ -360,9 +361,19 @@ def test_mission_mode_transitions_from_intent():
     assert next_mission_mode("navigate") == "navigate"
     assert next_mission_mode("patrol") == "patrol"
     assert next_mission_mode("follow") == "follow"
+    assert next_mission_mode("move") == "move"
     assert next_mission_mode("stop") == "idle"
     assert next_mission_mode("cancel") == "idle"
     assert next_mission_mode("mapping") == "idle"
+
+
+def test_move_velocity_for_direction():
+    assert move_velocity_for_direction("forward", 0.15, 0.6) == (0.15, 0.0)
+    assert move_velocity_for_direction("backward", 0.15, 0.6) == (-0.15, 0.0)
+    # 左转是逆时针（angular.z 正值），右转反之；速度取绝对值防呆
+    assert move_velocity_for_direction("left", 0.15, -0.6) == (0.0, 0.6)
+    assert move_velocity_for_direction("right", 0.15, 0.6) == (0.0, -0.6)
+    assert move_velocity_for_direction("sideways", 0.15, 0.6) is None
 
 
 def test_fake_detection_payload_is_filter_compatible():
@@ -388,6 +399,29 @@ def test_task_scheduler_parses_basic_voice_intents():
     assert unknown.intent == "unknown"
     assert unknown.requires_confirmation
     assert "确认" in unknown.reply
+
+
+def test_task_scheduler_parses_move_directions():
+    # 语音点动指令：前进/后退/左转/右转直接映射 move 意图
+    for text, direction in (
+        ("前进", "forward"),
+        ("向前走", "forward"),
+        ("后退", "backward"),
+        ("退后一点", "backward"),
+        ("倒车", "backward"),
+        ("左转", "left"),
+        ("向左", "left"),
+        ("右转", "right"),
+        ("turn right", "right"),
+    ):
+        cmd = parse_task_command(text)
+        assert cmd.intent == "move", text
+        assert cmd.target == direction, text
+        assert not cmd.requires_confirmation
+        assert cmd.reply
+    # 停止优先级必须高于方向词："停止后退" 应理解为停止
+    assert parse_task_command("停止后退").intent == "stop"
+    assert parse_move_direction("随便聊聊") == ""
 
 
 def test_calibrated_energy_threshold():

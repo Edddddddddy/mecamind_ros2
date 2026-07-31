@@ -40,6 +40,7 @@ from rclpy.node import Node
 from std_msgs.msg import Bool, String
 
 from .nav_utils import load_yaml, pose_stamped_from_dict
+from .task_scheduler import parse_move_direction
 
 
 @dataclass(frozen=True)
@@ -150,6 +151,7 @@ def next_mission_mode(intent: str) -> str:
     - navigate -> navigate（单点导航）
     - patrol -> patrol（多点巡航）
     - follow -> follow（跟随模式）
+    - move -> move（方向点动：前进/后退/左转/右转）
     - 其他未知 intent 一律回 idle，宁可不动也不要乱动。
     """
     normalized = intent.strip().lower()
@@ -161,7 +163,28 @@ def next_mission_mode(intent: str) -> str:
         return "patrol"
     if normalized == "follow":
         return "follow"
+    if normalized == "move":
+        return "move"
     return "idle"
+
+
+def move_velocity_for_direction(
+    direction: str,
+    linear_speed: float,
+    turn_speed: float,
+) -> Optional[tuple]:
+    """方向名 -> (linear_x, angular_z) 速度对；未知方向返回 None。
+
+    纯函数便于单测。约定：ROS 坐标系里 x 正方向是前进，
+    angular.z 正值是左转（逆时针）。
+    """
+    table = {
+        "forward": (abs(linear_speed), 0.0),
+        "backward": (-abs(linear_speed), 0.0),
+        "left": (0.0, abs(turn_speed)),
+        "right": (0.0, -abs(turn_speed)),
+    }
+    return table.get(direction.strip().lower())
 
 
 class MissionExecutorNode(Node):
@@ -187,6 +210,14 @@ class MissionExecutorNode(Node):
         self.declare_parameter("follow_enable_topic", "/mecamind/follow_enable")
         # 急停时直接往这个 topic 发零速度（位于 safety_gate 上游）。
         self.declare_parameter("cmd_vel_topic", "/controller/cmd_vel_nav")
+        # 方向点动走仲裁器的遥控通道（优先级高于跟随/导航），
+        # 停发 0.5s 后仲裁器自动让位，无需显式释放。
+        self.declare_parameter("teleop_cmd_topic", "/cmd_vel_teleop")
+        self.declare_parameter("move_linear_speed", 0.15)
+        self.declare_parameter("move_turn_speed", 0.6)
+        # 前进/后退持续时长与转向持续时长分开：0.6rad/s x 1.5s ≈ 转 52°
+        self.declare_parameter("move_duration_sec", 2.0)
+        self.declare_parameter("turn_duration_sec", 1.5)
         self.declare_parameter("named_goals_file", "")
         self.declare_parameter("waypoints_file", "")
         # 单个导航目标的超时时间；超时会主动 cancel，防止机器人卡死在半路。
@@ -219,6 +250,9 @@ class MissionExecutorNode(Node):
         self._goal_serial = 0
         # 需要用户口头确认时缓存的完整 task_command 载荷。
         self._pending_confirm: Optional[Dict[str, Any]] = None
+        # 方向点动状态：截止时刻（ROS 时钟秒）与要连发的速度指令。
+        self._move_until: Optional[float] = None
+        self._move_twist = Twist()
 
         # ---- ROS 通信接口 ----
         action_name = str(self.get_parameter("navigate_action").value)
@@ -235,6 +269,9 @@ class MissionExecutorNode(Node):
         self.cmd_pub = self.create_publisher(
             Twist, str(self.get_parameter("cmd_vel_topic").value), 10
         )
+        self.teleop_pub = self.create_publisher(
+            Twist, str(self.get_parameter("teleop_cmd_topic").value), 10
+        )
         self.reply_pub = self.create_publisher(String, "/mecamind/robot_reply", 10)
         self.create_subscription(
             String,
@@ -244,6 +281,8 @@ class MissionExecutorNode(Node):
         )
         # 0.5s 心跳定时器：发布状态 + 驱动排队目标的发送 + 检查超时。
         self.create_timer(0.5, self._tick)
+        # 10Hz 点动定时器：仲裁器新鲜度窗口 0.5s，必须持续发才能保住遥控通道。
+        self.create_timer(0.1, self._move_tick)
         # 启动时明确把跟随模式关掉、广播初始 idle 状态，让下游处于确定状态。
         self._publish_follow(False)
         self._publish_state()
@@ -298,7 +337,16 @@ class MissionExecutorNode(Node):
         if mode == "follow":
             self._enter_follow()
             return
+        if mode == "move":
+            self._enter_move(target)
+            return
         if mode == "navigate":
+            # LLM 有时会把"后退"解析成 navigate target='backward'，
+            # 这里兜底：目标名是方向词就转成点动，而不是查导航目标表。
+            direction = parse_move_direction(target)
+            if direction:
+                self._enter_move(direction)
+                return
             self._enter_navigate(target)
             return
         if mode == "patrol":
@@ -375,7 +423,10 @@ class MissionExecutorNode(Node):
         self._pending_confirm = None
         self._publish_follow(False)
         self._cancel_nav()
+        self._move_until = None
         self.cmd_pub.publish(Twist())
+        # 遥控通道也发一帧零速：若刚才在点动，立即刹停而不是等新鲜度超时。
+        self.teleop_pub.publish(Twist())
         self._patrol_index = 0
         self._pending_send = None
         self._set_state("idle", detail)
@@ -391,6 +442,51 @@ class MissionExecutorNode(Node):
         self._patrol_index = 0
         self._publish_follow(True)
         self._set_state("follow", "follow_enabled")
+
+    def _enter_move(self, direction: str) -> None:
+        """方向点动：以固定速度朝指定方向动一小段时间，然后自动停。
+
+        实现方式是"限时连发"：_move_tick 定时器以 10Hz 向遥控通道发
+        速度指令，超过截止时刻后发零速收尾。遥控通道在仲裁器里优先级
+        高于跟随/导航，所以点动期间可以临时"抢"过控制权，动完自动归还。
+        """
+        velocity = move_velocity_for_direction(
+            direction,
+            float(self.get_parameter("move_linear_speed").value),
+            float(self.get_parameter("move_turn_speed").value),
+        )
+        if velocity is None:
+            self._set_state("idle", f"unknown_direction:{direction}", direction)
+            return
+        # 点动与跟随/导航互斥：先清干净其他模式的残留。
+        self._publish_follow(False)
+        self._cancel_nav()
+        self._pending_send = None
+        twist = Twist()
+        twist.linear.x = float(velocity[0])
+        twist.angular.z = float(velocity[1])
+        duration_param = "turn_duration_sec" if direction in {"left", "right"} else "move_duration_sec"
+        duration = float(self.get_parameter(duration_param).value)
+        self._move_twist = twist
+        self._move_until = self.get_clock().now().nanoseconds / 1e9 + duration
+        self._set_state("move", f"moving:{direction}", direction)
+        self.get_logger().info(
+            f"Move {direction}: linear={twist.linear.x:.2f} angular={twist.angular.z:.2f} "
+            f"for {duration:.1f}s"
+        )
+
+    def _move_tick(self) -> None:
+        """10Hz 点动心跳：时限内连发速度，到时发零速并回 idle。"""
+        if self._move_until is None:
+            return
+        now = self.get_clock().now().nanoseconds / 1e9
+        if now < self._move_until:
+            self.teleop_pub.publish(self._move_twist)
+            return
+        self._move_until = None
+        self.teleop_pub.publish(Twist())
+        if self._mode == "move":
+            self._set_state("idle", f"moved:{self._target}")
 
     def _enter_navigate(self, target: str) -> None:
         """处理单点导航指令：解析目标名，把目标放入待发送队列。
